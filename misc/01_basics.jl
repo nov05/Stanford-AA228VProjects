@@ -1,8 +1,9 @@
 ## created by nov05 on 2025-05-07
-## Or check the Colab notebook - https://colab.research.google.com/drive/1kgsRaZeUY9lT_zHba0taDr1K_MDTTbYi
 #=
     This file includes example code from the following video.
     https://www.youtube.com/watch?v=KlorfxsdWDw
+    Or check the Colab notebook  
+    https://colab.research.google.com/drive/1kgsRaZeUY9lT_zHba0taDr1K_MDTTbYi
 =#
 ## Alt+JO to open the Julia REPL terminal
 ## Ctrl+Enter to evalute a line
@@ -102,10 +103,85 @@ multi_types_matrix = [
 ]
 typeof(multi_types_matrix)
 
-## dictionary
+## dictionary and symbol
 dog_dict = Dict(
     "name" => :eggdog,
     :age => 3,
     23 => "egg-dog mix"
 )
 dog_dict["name"]
+dog_dict[:email] = "dog@gmail.com"
+dog_dict
+pop!(dog_dict, :email)
+dog_dict
+
+mutable struct Dog 
+    name::String
+    age::Integer
+    email::String
+end
+my_dog = Dog("π", 6, "pi@gmail.com")
+typeof(my_dog)
+my_dog.name
+
+## condition
+x, y = 1, 2
+x, y = y, x
+x = y
+println(x, "\t", y)
+x, y = 1, 2
+task_1() = println("$x > $y")
+task_2() = println("$x < $y")
+task_3() = println("$x == $y")
+if x > y 
+    task_1()
+elseif x < y
+    task_2()
+else
+    task_3()
+end
+
+## ternary operator
+x > y ? task_1() : println("$x <= $y")
+x > y ? task_1() : (x < y ? task_2() : task_3())
+
+## while-loop
+i = 1
+while i < 10
+    println(i)
+    i += 1
+end
+
+## for-loop
+for i = 1:10
+    println(i)
+end
+for i = 0:3:12
+    println(i)
+end
+
+## list comprehension 
+[i^2 for i in 1:3]
+
+## function overloading
+function mytypeof(x::Int64)
+    return("integer")
+end
+function mytypeof(x::Number)
+    return("number")
+end
+function mytypeof(x::Any)
+    return("any")
+end
+## mutiple dispatch
+function mygenericfunction(x)
+    println(
+        "The type of x is: ",
+        mytypeof(x)
+    )
+end
+mygenericfunction(3)
+mygenericfunction(2.0)
+mygenericfunction('🐶')
+
+
