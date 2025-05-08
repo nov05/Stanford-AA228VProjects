@@ -183,5 +183,38 @@ end
 mygenericfunction(3)
 mygenericfunction(2.0)
 mygenericfunction('🐶')
+methods(mygenericfunction)
+methods(mytypeof)
+methods(+)
 
+## anounymous function
+map(x -> x*" world!", ["Hello"])
 
+## standard function
+using Random
+Random.seed!(1)
+rand(10)
+using Statistics
+mean(randn(10000))
+median(randn(10000))
+std(randn(10000))
+
+## external packages
+#=
+    $ pwd()
+    $ cd("misc")
+    $ ]
+    (@v1.11) pkg> activate .
+    (misc) pkg> add Plots
+    ## backspace to exit
+=#
+using Plots
+f(x) = x^3 - 2x
+plot(f)
+using Random
+Random.seed!(42)
+scatter(randn(1000), randn(1000))
+
+## Pluto
+import Pluto
+Pluto.run()
