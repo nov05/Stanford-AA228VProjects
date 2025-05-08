@@ -214,8 +214,33 @@ plot(f)
 using Random
 Random.seed!(42)
 scatter(randn(1000), randn(1000))
+closeall()
+GC.gc()
 
 ## Pluto
-## https://nov05.github.io/htmls/julia/02_Pluto.html
+## https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/02_Pluto.html
 import Pluto
 Pluto.run()
+
+## Julia version
+versioninfo()
+#=
+julia> versioninfo()
+Julia Version 1.11.5
+Commit 760b2e5b73 (2025-04-14 06:53 UTC)
+Build Info:
+  Official https://julialang.org/ release
+Platform Info:
+  OS: Windows (x86_64-w64-mingw32)
+  CPU: 12 × Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  WORD_SIZE: 64
+  LLVM: libLLVM-16.0.6 (ORCJIT, skylake)
+Threads: 1 default, 0 interactive, 1 GC (on 12 virtual cores)
+Environment:
+  JULIA_DEPOT_PATH = D:\Users\guido\.julia
+  JULIA_EDITOR = code
+  JULIA_NUM_THREADS =
+=#
+
+## help
+## type ? for help, ]? for package help
