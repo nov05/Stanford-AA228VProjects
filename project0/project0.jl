@@ -162,10 +162,15 @@ A function that takes in a system `sys` and a specification `ψ` and **returns t
 """
 
 # ╔═╡ 798451be-5646-4b5e-b4d7-04d9fc9e6699
-function num_failures(sys, ψ; m=1000)
-	# TODO: WRITE YOUR CODE HERE
-	τ = rollout(sys, m)
-end
+# function num_failures(sys, ψ; m=1000)
+# 	# TODO: WRITE YOUR CODE HERE
+# 	n = 0
+# 	for i in 1:m
+# 		τ = rollout(sys; d=25)
+# 		n += isfailure(ψ, τ)
+# 	end
+# 	return n
+# end
 
 # ╔═╡ 651313a4-2766-49dd-8737-475ed80079e2
 end_code()
@@ -179,11 +184,14 @@ md"""
 Example usage with `m=1000` number of rollouts.
 """
 
-# ╔═╡ a6e52a4e-6e75-4ae0-9e3a-cc82f9ad6b2b
-num_failures(sys, ψ; m=1000)
-
 # ╔═╡ bfc1779c-5ce8-47f5-be65-e4e74f2071cf
 hint(md"Can you write the `num_failures` function in one line of code? (Not required)"; title="Feeling adventurous?")
+
+# ╔═╡ 3f3ca33d-9c8d-4fbc-b972-8656cd55cb47
+num_failures(sys, ψ; m=1000) = sum(isfailure(ψ, rollout(sys; d=50)) for _ in 1:m)
+
+# ╔═╡ a6e52a4e-6e75-4ae0-9e3a-cc82f9ad6b2b
+num_failures(sys, ψ; m=1000)
 
 # ╔═╡ eee07ddd-ee38-4a22-8807-3afcf46ad00d
 html_quarter_space()
@@ -2457,6 +2465,7 @@ version = "1.8.1+0"
 # ╟─873c99d8-ebd8-4ce3-92ca-6975c713fc8b
 # ╠═a6e52a4e-6e75-4ae0-9e3a-cc82f9ad6b2b
 # ╟─bfc1779c-5ce8-47f5-be65-e4e74f2071cf
+# ╠═3f3ca33d-9c8d-4fbc-b972-8656cd55cb47
 # ╟─eee07ddd-ee38-4a22-8807-3afcf46ad00d
 # ╟─2827a6f3-47b6-4e6f-b6ae-63271715d1f3
 # ╠═83884eb4-6718-455c-b731-342471325326
