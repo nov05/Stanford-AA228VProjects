@@ -216,5 +216,6 @@ Random.seed!(42)
 scatter(randn(1000), randn(1000))
 
 ## Pluto
+## https://nov05.github.io/htmls/julia/02_Pluto.html
 import Pluto
 Pluto.run()
