@@ -219,8 +219,7 @@ GC.gc()
 
 ## Pluto
 ## https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/02_Pluto.html
-import Pluto
-Pluto.run()
+import Pluto; Pluto.run()
 
 ## Julia version
 versioninfo()
