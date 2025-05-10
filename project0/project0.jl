@@ -166,7 +166,7 @@ A function that takes in a system `sys` and a specification `ψ` and **returns t
 # 	# TODO: WRITE YOUR CODE HERE
 # 	n = 0
 # 	for i in 1:m
-# 		τ = rollout(sys; d=25)
+# 		τ = rollout(sys)
 # 		n += isfailure(ψ, τ)
 # 	end
 # 	return n
@@ -188,7 +188,7 @@ Example usage with `m=1000` number of rollouts.
 hint(md"Can you write the `num_failures` function in one line of code? (Not required)"; title="Feeling adventurous?")
 
 # ╔═╡ 3f3ca33d-9c8d-4fbc-b972-8656cd55cb47
-num_failures(sys, ψ; m=1000) = sum(isfailure(ψ, rollout(sys; d=50)) for _ in 1:m)
+num_failures(sys, ψ; m=1000) = sum(isfailure(ψ, rollout(sys)) for _ in 1:m)
 
 # ╔═╡ a6e52a4e-6e75-4ae0-9e3a-cc82f9ad6b2b
 num_failures(sys, ψ; m=1000)

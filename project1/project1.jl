@@ -505,6 +505,10 @@ In this test, we make sure that your algorithm is robust to random failure thres
 # ╔═╡ 7910c15c-a231-4a0f-a4ed-1fe0b52f62c7
 @bind γ Slider(-3:0.1:3, default=0, show_value=true)
 
+# ╔═╡ d0598933-aca6-4660-9e51-e6cc83e781fb
+## Test code： get c for rejection sampling
+println(γ, '\t', pdf(ps_small, γ) / pdf(ps_small, 0))
+
 # ╔═╡ cbc3a060-b4ec-4572-914c-e07880dd3537
 md"""
 _You can also click the slider then use the arrow keys for finer control._
@@ -749,6 +753,17 @@ baseline_details(sys_small; n_baseline=n_baseline_small, descr="simple Gaussian"
 # ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
 @small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys))
 	# TODO: WRITE YOUR CODE HERE
+	d = get_depth(sys)
+	m = n ÷ d                                          # Get num rollouts, \div for ÷
+	q = Distributions.Normal(-γ, 1.0)   
+	c = pdf(ps_small, γ) / pdf(ps_small, 0)
+	τs = []
+	τ = rollout(q; d)
+	# τs = [rollout(sys, q; d) for _ in 1:m]             # Rollout with q, m*d steps
+	pτ = NominalTrajectoryDistribution(sys, d)	
+	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs.
+	τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) # Most-likely failure traj
+	return τ_most_likely  
 end
 
 # ╔═╡ 307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
@@ -3760,6 +3775,7 @@ version = "1.8.1+0"
 # ╟─92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 # ╟─a003beb6-6235-455c-943a-e381acd00c0e
 # ╟─f6589984-e24d-4aee-b7e7-db159ae7fea6
+# ╠═d0598933-aca6-4660-9e51-e6cc83e781fb
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
