@@ -46,7 +46,8 @@ end
 
 # ╔═╡ 7f145d8a-2b32-4f4c-9c4c-20bacd0cfb7b
 md"* Notebook worked on by Nov05 on 2025-05-08
-* Check [Q&A](https://github.com/nov05/Stanford-AA228VProjects/blob/main/AA228V-FAQs.md)"
+* Check [FAQs](https://github.com/nov05/Stanford-AA228VProjects/blob/main/AA228V-FAQs.md)  
+* Check the course Julia package [source code](https://github.com/nov05/Stanford-AA228VProjects/tree/main/julia/packages/StanfordAA228V)"  
 
 # ╔═╡ 117d0059-ce1a-497e-8667-a0c2ef20c632
 md"""
@@ -447,9 +448,10 @@ The following function is a baseline random falsification algorithm that returns
 
 # ╔═╡ 6988c0be-077f-4eb3-93db-1e24dbec75a4
 ## Nov05: code explanation 
+## Find definition in ".julia\packages\StanfordAA228V\h5BcH\src\system.jl"
 begin 
 	local pτ = NominalTrajectoryDistribution(sys_small, 1)
-	println(pτ)
+	println(initial_state_distribution(pτ))
 	local τs = [rollout(sys_small, pτ; d=1) for _ in 1:20]
 	println(τs[1])
 	println(τs[2])
@@ -521,7 +523,7 @@ In this test, we make sure that your algorithm is robust to random failure thres
 
 # ╔═╡ 8529dbc5-c446-45bc-aa01-8039bda36a41
 ## Nov05: check the small system distribution
-## D:\Users\guido\.julia\packages\StanfordAA228V\h5BcH\src\gaussian_system.jl
+## ".julia\packages\StanfordAA228V\h5BcH\src\gaussian_system.jl"
 begin 
 	println(fieldnames(typeof(sys_small)))
 	println(sys_small.env)
