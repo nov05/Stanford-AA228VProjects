@@ -45,7 +45,8 @@ begin
 end
 
 # ╔═╡ 7f145d8a-2b32-4f4c-9c4c-20bacd0cfb7b
-md"* Notebook worked on by Nov05 on 2025-05-08"
+md"* Notebook worked on by Nov05 on 2025-05-08
+* Check [Q&A](https://github.com/nov05/Stanford-AA228VProjects/blob/main/AA228V-FAQs.md)"
 
 # ╔═╡ 117d0059-ce1a-497e-8667-a0c2ef20c632
 md"""
@@ -444,6 +445,16 @@ md"""
 The following function is a baseline random falsification algorithm that returns the trajectory that led to the most-likely failure.
 """
 
+# ╔═╡ 6988c0be-077f-4eb3-93db-1e24dbec75a4
+## Nov05: code explanation 
+begin 
+	local pτ = NominalTrajectoryDistribution(sys_small, 1)
+	println(pτ)
+	local τs = [rollout(sys_small, pτ; d=1) for _ in 1:20]
+	println(τs[1])
+	println(τs[2])
+end
+
 # ╔═╡ bb3b33e6-fd05-4631-b0bd-c71ef3dbee38
 n_baseline_small = 100
 
@@ -471,6 +482,9 @@ start_code()
 
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
+
+# ╔═╡ 99339695-f201-4e57-afe7-bf541d1c90fa
+
 
 # ╔═╡ e2418154-4471-406f-b900-97905f5d2f59
 html_quarter_space()
@@ -505,9 +519,62 @@ In this test, we make sure that your algorithm is robust to random failure thres
 # ╔═╡ 7910c15c-a231-4a0f-a4ed-1fe0b52f62c7
 @bind γ Slider(-3:0.1:3, default=0, show_value=true)
 
-# ╔═╡ d0598933-aca6-4660-9e51-e6cc83e781fb
-## Test code： get c for rejection sampling
-println(γ, '\t', pdf(ps_small, γ) / pdf(ps_small, 0))
+# ╔═╡ 8529dbc5-c446-45bc-aa01-8039bda36a41
+## Nov05: check the small system distribution
+## D:\Users\guido\.julia\packages\StanfordAA228V\h5BcH\src\gaussian_system.jl
+begin 
+	println(fieldnames(typeof(sys_small)))
+	println(sys_small.env)
+	println(Ps(sys_small.env))
+	local p̄ = τ -> pdf(Ps(sys_small.env), τ)  ## target density function
+	println(p̄(-1.4))
+	local q = Distributions.Normal(-1.4, 0.6)  ## proposal distribution function 
+	println(pdf(q,  -1.4))
+	## get c for rejection sampling
+	println(γ, ", ", pdf(ps_small, γ) / pdf(ps_small, 0))
+end
+
+# ╔═╡ 9103f3a3-d41f-43b6-b2a0-d475c4d9b734
+## Nov05: code explanation
+begin
+	local c = pdf(ps_small, γ) / pdf(ps_small, 0)
+	local qτ = Distributions.Normal(-γ, c)   
+	local τs = [rollout(sys_small, qτ; d=1) for _ in 1:20]
+	println(τs[1])
+	println(τs[2])
+	# τs_failures = filter(τ->isfailure(ψ_small, τ), τs)
+end
+
+# ╔═╡ 87f059b6-44df-4d5d-ab15-ec18e3420e83
+## Nov05: code explanation
+begin
+	struct RejectionSampling
+	    p̄     # target density
+	    q     # proposal trajectory distribution
+	    c     # constant such that p̄(τ) ≤ cq(τ)
+	    k_max # max iterations
+	end
+	
+	function sample_failures(alg::RejectionSampling, sys, ψ)
+	    p̄, q, c, k_max = alg.p̄, alg.q, alg.c, alg.k_max
+	    τs = []
+	    for k in 1:k_max
+	        τ = rollout(sys, q; d=1)
+			println(τ[1].s)
+	        if rand() < p̄(τ) / (c * pdf(q, τ))
+	            push!(τs, τ)
+	        end
+	    end
+	    return τs
+	end
+	
+	local p̄ = τ -> pdf(Ps(sys_small.env), τ)
+	local c = pdf(ps_small, γ) / pdf(ps_small, 0)
+	local q = Distributions.Normal(-γ, c)
+	local k_max = 20
+	local alg = RejectionSampling(p̄, q, c, k_max)
+	sample_failures(alg, sys_small, ψ_small)
+end
 
 # ╔═╡ cbc3a060-b4ec-4572-914c-e07880dd3537
 md"""
@@ -754,14 +821,11 @@ baseline_details(sys_small; n_baseline=n_baseline_small, descr="simple Gaussian"
 @small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys))
 	# TODO: WRITE YOUR CODE HERE
 	d = get_depth(sys)
-	m = n ÷ d                                          # Get num rollouts, \div for ÷
-	q = Distributions.Normal(-γ, 1.0)   
+	m = n ÷ d                                          # Get num rollouts
 	c = pdf(ps_small, γ) / pdf(ps_small, 0)
-	τs = []
-	τ = rollout(q; d)
-	# τs = [rollout(sys, q; d) for _ in 1:m]             # Rollout with q, m*d steps
-	pτ = NominalTrajectoryDistribution(sys, d)	
-	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs.
+	qτ = Distributions.Normal(-γ, c)                   # hand-designed proposal dist
+	τs = [rollout(sys, qτ; d) for _ in 1:m]            # Rollout with qτ, m*d steps
+	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs
 	τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) # Most-likely failure traj
 	return τ_most_likely  
 end
@@ -3762,6 +3826,7 @@ version = "1.8.1+0"
 # ╟─166bd412-d433-4dc9-b874-7359108c0a8b
 # ╟─9132a200-f63b-444b-9830-b03cf075021b
 # ╠═c2ae204e-dbcc-453a-81f5-791ba4be39db
+# ╠═6988c0be-077f-4eb3-93db-1e24dbec75a4
 # ╟─42456abf-4930-4b01-afd1-fce3b4881e28
 # ╠═bb3b33e6-fd05-4631-b0bd-c71ef3dbee38
 # ╠═254956d0-8f58-4e2b-b8a9-5dd10dd074a2
@@ -3775,9 +3840,12 @@ version = "1.8.1+0"
 # ╟─92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 # ╟─a003beb6-6235-455c-943a-e381acd00c0e
 # ╟─f6589984-e24d-4aee-b7e7-db159ae7fea6
-# ╠═d0598933-aca6-4660-9e51-e6cc83e781fb
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
+# ╠═8529dbc5-c446-45bc-aa01-8039bda36a41
+# ╠═9103f3a3-d41f-43b6-b2a0-d475c4d9b734
+# ╠═87f059b6-44df-4d5d-ab15-ec18e3420e83
+# ╠═99339695-f201-4e57-afe7-bf541d1c90fa
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
 # ╟─beaec161-ad89-4f83-9066-f420a1d04d39
