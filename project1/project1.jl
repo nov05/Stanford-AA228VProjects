@@ -701,15 +701,18 @@ begin
 		# TODO: WRITE YOUR CODE HERE
 		d = get_depth(sys)
 		m = n ÷ d  ## Get num of rollouts 
-		## get failure threshold γ
+		## get failure threshold γ 
+		## Get γ from the specification is basically cheating.
+		## However in real life we could esitmate γ.
+		# γ = estimate_failure_threshold()  ## This will increase steps.
 		γ = NaN
 		try
-		    γ = ψ.formula.ϕ.c
+		    γ = ψ.formula.ϕ.c  
 		catch e
 			# println(fieldnames(typeof(ψ.formula.ϕ.c_encoded.)))
 		    γ = ψ.formula.ϕ.c_encoded._c
 		end
-		## hand-designed proposal dist
+		## hand-designed proposal distribution
 		q = ProposalNormalDistribution(γ, 1)  
 		c = pdf(ps_small, γ) / pdf(ps_small, 0)
 		μ = ps_small.μ
@@ -728,14 +731,14 @@ begin
 				push!(τs_accept, τ)
 			end
 		end
-		## Filter to get failure trajs, type Vector{Any}
+		## Filter to get failure trajactories, type Vector{Any}
 		τs_failures = filter(τ->isfailure(ψ, τ), τs_accept)  
 		num_failures = length(τs_failures)
-		println("👉 Nov05: γ = $γ. Got $num_failures failures out of $m rollouts.")
-		## Most-likely failure traj
+		## Most-likely failure trajactory
 		# τ_most_likely = argmax(τ->logpdf(ps_small, τ[d].s), τs_failures) 
 		pτ = NominalTrajectoryDistribution(sys, d)
 		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
+		println("👉 Nov05: γ = $γ. Got $num_failures failures out of $m rollouts.")
 		## τs has to be Vector{Any}[[]]
 		return full ? (τ_most_likely, τs) : τ_most_likely
 	end
@@ -1520,6 +1523,28 @@ end
 # ╔═╡ 57d321cd-2029-4e49-8b56-9c5c48721ac4
 ψ_small_slider = create_specification(γ);
 
+# ╔═╡ 4069db5c-e26b-4bcf-9136-0a59ebf802d9
+## Nov05: estimate γ from samples
+begin
+	function estimate_failure_threshold(sys::SmallSystem=sys_small, ψ=ψ_small_slider; m=1000)
+		d = get_depth(sys)
+		pτ = NominalTrajectoryDistribution(sys, d)
+		τs = [rollout(sys, pτ; d=d) for _ in 1:m]
+		τs_failures = filter(τ->isfailure(ψ, τ), τs)  ## Vector{Any}[[]]
+		ss = [τ[d].s for τ in τs_failures]
+		s_min = minimum(ss)
+		if s_min > 0.0
+			return s_min
+		end
+		s_max = maximum(ss)
+		if s_max <= 0.0
+			return s_max
+		end
+		return 0.0
+	end
+	println(estimate_failure_threshold())
+end
+
 # ╔═╡ ffae531d-9be7-44fa-83fa-d60908a4f9a1
 ## Nov05: code explanation, rejection sampling
 ## Find function roullout() definition in system.jl
@@ -1541,11 +1566,12 @@ begin
 	## get c for rejection sampling
 	local c = pdf(ps_small, γ) / pdf(ps_small, 0)
 	println("γ = $γ, c = $c, n_baseline_small = $n_baseline_small")
-	q = ProposalNormalDistribution(γ, 1)
+	local q = ProposalNormalDistribution(γ, 1)
 	println("p(γ) = ", pdf(ps_small, γ), " c*q(γ) = ", c * pdf(q, γ))
 	local τ = rollout(sys_small, q; d=1)
 	println("Sample from q: ", τ[1].s)
-	println("τ_most_likely = ", results.τ[1].s)
+	println("τ_most_likely = ", results.τ[1].s, " ", typeof(results.τ))
+	println("⚠️ log_likelihood(sys_small, τ): ", log_likelihood(sys_small, results.τ))
 	println("The last sample τ = ", results.τs[n_baseline_small][end].s)
 	## plot
 	plot(sys_small, ψ_small_slider, results.τs)
@@ -1735,7 +1761,7 @@ begin
 		global user_score, user_score_rd = 
 			check_inf(leaderboard_scores(
 				[sys_small, sys_medium, sys_large],
-				[τs_small, τ_medium, τ_large]; 𝐰=𝐰))
+				[τ_small, τ_medium, τ_large]; 𝐰=𝐰))
 	catch end
 
 
@@ -3908,6 +3934,7 @@ version = "1.8.1+0"
 # ╟─f6589984-e24d-4aee-b7e7-db159ae7fea6
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
+# ╠═4069db5c-e26b-4bcf-9136-0a59ebf802d9
 # ╠═ffae531d-9be7-44fa-83fa-d60908a4f9a1
 # ╠═99339695-f201-4e57-afe7-bf541d1c90fa
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
@@ -3925,7 +3952,7 @@ version = "1.8.1+0"
 # ╠═7910c15c-a231-4a0f-a4ed-1fe0b52f62c7
 # ╟─cbc3a060-b4ec-4572-914c-e07880dd3537
 # ╟─f286f3b2-3bac-4384-9b40-522e974a14ee
-# ╟─307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
+# ╠═307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
 # ╠═d0a3770a-2c48-42db-9a71-6b7f695f22d8
 # ╟─fda151a1-5069-44a8-baa1-d7903bc89797
 # ╟─e29b6ddd-d3da-4122-a561-18bc267e2047
@@ -3992,12 +4019,12 @@ version = "1.8.1+0"
 # ╟─860ec509-3a86-4842-9471-6b1a0b8f366d
 # ╠═54741d81-39e0-4a47-b84d-c41c8eb7611b
 # ╟─6559cf16-a474-4533-a2c7-ccbc02480a76
-# ╠═cfdba748-45d5-4eaa-97b3-fdc9fe7e4333
+# ╟─cfdba748-45d5-4eaa-97b3-fdc9fe7e4333
 # ╟─6beda870-0cb0-40f5-9531-fa3e2f7bb020
 # ╠═5c3d24f6-0106-444c-b7df-89bba8c01b37
 # ╟─4edc5933-9457-4c7c-8456-a26974e0587e
 # ╟─95e3d42f-b33f-4294-81c5-f34a300dc9b4
-# ╠═ba6c082b-6e62-42fc-a85c-c8b7efc89b88
+# ╟─ba6c082b-6e62-42fc-a85c-c8b7efc89b88
 # ╟─5aef09eb-ddc5-4b99-abf2-568621b871d5
 # ╟─173388ab-207a-42a6-b364-b2c1cb335f6b
 # ╟─38b64ee2-5372-4374-80e8-fbf203021a61
