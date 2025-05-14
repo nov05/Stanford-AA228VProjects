@@ -46,6 +46,7 @@ end
 
 # ╔═╡ 7f145d8a-2b32-4f4c-9c4c-20bacd0cfb7b
 md"* Notebook worked on by Nov05 on 2025-05-08
+* Check [the project documentation](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.ec6hucsctlh7)
 * Check [FAQs](https://github.com/nov05/Stanford-AA228VProjects/blob/main/AA228V-FAQs.md)  
 * Check the course Julia package [source code](https://github.com/nov05/Stanford-AA228VProjects/tree/main/julia/packages/StanfordAA228V)
 * Check [the textbook notes](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.qfey2q7ioy3x#heading=h.g9i54r1byr5a), e.g. **Ctrl+F** to search for \"fuzzing\""  
@@ -490,6 +491,9 @@ Please fill in the following `most_likely_failure` function.
 # ╔═╡ a003beb6-6235-455c-943a-e381acd00c0e
 start_code()
 
+# ╔═╡ 5b0e52ff-2167-4e7e-b4c0-5b6b9e4ce583
+md"**Nov05: 👉 Check [this notebook](https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/project1-small-rejection.html) for the \"rejection sampling\" solution.**"
+
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
 
@@ -630,6 +634,10 @@ start_code()
 # ╔═╡ 759534ca-b40b-4824-b7ec-3a5c06cbd23e
 end_code()
 
+# ╔═╡ bc98a420-dcae-4e07-94a2-ac7619080992
+## Nov05: code explanation
+methods(robustness)
+
 # ╔═╡ 7987c20d-68e8-441b-bddc-3f0ae7c3591d
 html_quarter_space()
 
@@ -768,28 +776,32 @@ n_\\text{steps} &= $(format(baseline_medium_results.n; latex=true)) \\tag{number
 baseline_details(sys_small; n_baseline=n_baseline_small, descr="simple Gaussian", max_steps)
 
 # ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
+## fuzzing
 begin
 	struct FuzzingDistribution <: TrajectoryDistribution
 		# Σₒ ## sensor disturbance covariance
 		μ
-		δ
+		σ
 	end
+	## the disturbance_distribution for the SmallSystem does not apply
 	function StanfordAA228V.disturbance_distribution(
 		p::FuzzingDistribution, t)
 		D = DisturbanceDistribution((o) -> Deterministic(),
 									(s,a) -> Deterministic(),
-									(s) -> Normal(p.μ, p.δ))
+									(s) -> Deterministic()) 
 		return D
 	end
 	function StanfordAA228V.initial_state_distribution(p::FuzzingDistribution)
-		return Normal(p.μ, p.δ)
+		return Normal(p.μ, p.σ)
 	end
 	StanfordAA228V.depth(p::FuzzingDistribution) = get_depth(sys_small)
 	@small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys), full=false)
 		# TODO: WRITE YOUR CODE HERE
 		d = get_depth(sys)
 		m = n ÷ d  ## Get num of rollouts 
-		q = FuzzingDistribution(0, 2)  
+		ps_small = Ps(sys.env)
+		## increase the variance
+		q = FuzzingDistribution(ps_small.μ, 2 * ps_small.σ)  
 		τs = [rollout(sys_small, q; d=d) for _ in 1:m]
 		## Filter to get failure trajactories, type Vector{Any}
 		τs_failures = filter(τ->isfailure(ψ, τ), τs)  
@@ -829,10 +841,8 @@ $(@bind rerun_small LargeCheckBox(text="⟵ Click to re-run the <code>SmallSyste
 # ╔═╡ 772cf17e-0fdb-470e-9f12-9480af811edd
 baseline_details(sys_medium; n_baseline=n_baseline_medium, descr="pendulum", max_steps)
 
-# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
-@medium function most_likely_failure(sys::MediumSystem, ψ; n=max_steps(sys))
-	# TODO: WRITE YOUR CODE HERE
-end
+# ╔═╡ 0cff0bac-9e42-474f-8ea0-b8a885d2e4c7
+println(max_steps(sys_medium), " ", get_depth(sys_medium))
 
 # ╔═╡ 38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
 Markdown.MD(
@@ -1287,6 +1297,59 @@ begin
 	md"> *Helper `extract` and `initial_guess` functions.*"
 end
 
+# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
+## optimization based falsification
+begin
+	struct OptimizationBasedFalsification
+	    objective  # objective function
+	    optimizer  # optimization algorithm
+	end
+	
+	function falsify(alg::OptimizationBasedFalsification, sys, ψ)
+	    f(x) = alg.objective(x, sys, ψ)
+	    return alg.optimizer(f, sys, ψ)
+	end
+
+	function robustness_objective(x, sys, ψ; smoothness=0.0)
+	    s, x = extract(sys.env, x)
+	    τ = rollout(sys, s, x)
+	    s = [step.s for step in τ]
+	    return robustness(s, ψ.formula, w=smoothness)
+	end
+
+	function weighted_likelihood_objective(x, sys, ψ; smoothness=0.0, λ=1.0)
+	    s, x = extract(sys.env, x)
+	    τ = rollout(sys, s, x)
+	    s = [step.s for step in τ]
+	    p = NominalTrajectoryDistribution(sys, length(x))
+	    return robustness(s, ψ.formula, w=smoothness) - λ * log(pdf(p, τ))
+	end
+
+	# objective(x, sys, ψ) = robustness_objective(x, sys, ψ, smoothness=1.0)
+	objective(x, sys, ψ) = weighted_likelihood_objective(
+		x, sys, ψ; smoothness=0.5, λ=0.02)
+		
+	function lbfgs(f, sys, ψ)
+	    x₀ = zeros(20)
+	    alg = Optim.LBFGS()
+	    options = Optim.Options(store_trace=true, extended_trace=true)
+	    results = Optim.optimize(f, x₀, alg, options; autodiff=:forward)
+		println("👉 Optimization result rollout number: ", length(results.trace))
+	    τs = [rollout(sys, extract(sys.env, iter.metadata["x"])...)
+	          for iter in results.trace]
+	    return filter(τ -> isfailure(ψ, τ), τs)
+	end
+	
+	@medium function most_likely_failure(sys::MediumSystem, ψ; n=max_steps(sys))
+		# TODO: WRITE YOUR CODE HERE 
+		d = get_depth(sys)
+		alg = OptimizationBasedFalsification(objective, lbfgs)
+		τs_failures = falsify(alg, sys, ψ)
+		pτ = NominalTrajectoryDistribution(sys, d)
+		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
+	end
+end
+
 # ╔═╡ 6c8b3077-876e-42fd-aa47-f3fa7c37f4dd
 Markdown.MD(
 	md"$(@bind dark_mode DarkModeIndicator())",
@@ -1488,9 +1551,6 @@ begin
 		n = stepcount()
 		return (τ=τ, τs=τs, ℓ=ℓ, n=n) # return these variables as a NamedTuple
 	end
-	## Changing the spec violates the honor code
-	## The comparison operator flips when γ > 0
-	# ψ_test = create_specification(γ)  
 	local results = run_fuzzing(sys_small, ψ_small_slider; n=n_baseline_small)
 	println("τ_most_likely = ", results.τ[1].s, ", type: ", typeof(results.τ))
 	println("log_likelihood(sys_small, τ): ", log_likelihood(sys_small, results.τ))
@@ -3853,6 +3913,7 @@ version = "1.8.1+0"
 # ╟─92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 # ╟─a003beb6-6235-455c-943a-e381acd00c0e
 # ╟─f6589984-e24d-4aee-b7e7-db159ae7fea6
+# ╟─5b0e52ff-2167-4e7e-b4c0-5b6b9e4ce583
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
 # ╠═ffae531d-9be7-44fa-83fa-d60908a4f9a1
@@ -3886,7 +3947,7 @@ version = "1.8.1+0"
 # ╟─a16cf110-4afa-4792-9d3f-f13b24349886
 # ╠═44c8fbe0-21e7-482b-84a9-c3d32a4737dd
 # ╟─772cf17e-0fdb-470e-9f12-9480af811edd
-# ╠═f005da72-d7b5-4f01-8882-ed4e2bdcf4bd
+# ╟─f005da72-d7b5-4f01-8882-ed4e2bdcf4bd
 # ╠═77a6e704-33e8-4241-84f0-0e58c29c06ef
 # ╟─7ef66a50-6acc-474f-b406-7b27a7b18510
 # ╟─e12b102e-785b-46e9-980c-e9f7943eda60
@@ -3897,6 +3958,8 @@ version = "1.8.1+0"
 # ╟─9657f5ff-f21c-43c5-838d-402a2a723d5e
 # ╠═cb7b9b9f-59da-4851-ab13-c451c26117df
 # ╟─759534ca-b40b-4824-b7ec-3a5c06cbd23e
+# ╠═bc98a420-dcae-4e07-94a2-ac7619080992
+# ╠═0cff0bac-9e42-474f-8ea0-b8a885d2e4c7
 # ╟─7987c20d-68e8-441b-bddc-3f0ae7c3591d
 # ╟─da2d692a-8378-435e-bd6b-c0e65caef542
 # ╟─23999cd9-543b-47dc-a0b2-e133ba95891e

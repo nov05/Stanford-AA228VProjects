@@ -681,11 +681,11 @@ alg = DirectFalsification(1, $(max_steps(sys_small)))
 baseline_details(sys_small; n_baseline=n_baseline_small, descr="simple Gaussian", max_steps)
 
 # ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
+## Rejection sampling
 begin
-	## Rejection sampling
 	struct ProposalNormalDistribution <: TrajectoryDistribution
 		μ
-		δ
+		σ
 	end
 	function StanfordAA228V.disturbance_distribution(
 		p::ProposalNormalDistribution, t)
@@ -695,7 +695,7 @@ begin
 		return D
 	end
 	function StanfordAA228V.initial_state_distribution(p::ProposalNormalDistribution)
-		return Normal(p.μ, p.δ)
+		return Normal(p.μ, p.σ)
 	end
 	StanfordAA228V.depth(p::ProposalNormalDistribution) = get_depth(sys_small)
 	@small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys), full=false)
@@ -703,8 +703,8 @@ begin
 		d = get_depth(sys)
 		m = n ÷ d  ## Get num of rollouts 
 		## get failure threshold γ 
-		## Get γ from the specification is basically cheating.
-		## However in real life we could esitmate γ.
+		## Getting γ from the specification is basically cheating.
+		## However in real life we could estimate γ.
 		# γ = estimate_failure_threshold()  ## This will increase steps.
 		γ = NaN
 		try
@@ -713,10 +713,10 @@ begin
 			# println(fieldnames(typeof(ψ.formula.ϕ.c_encoded.)))
 			γ = ψ.formula.ϕ.c_encoded._c
 		end
+		ps_small = Ps(sys.env)
 		## hand-designed proposal distribution
-		q = ProposalNormalDistribution(γ, 1)  
+		q = ProposalNormalDistribution(γ, ps_small.σ)  
 		c = pdf(ps_small, γ) / pdf(ps_small, 0)
-		μ = ps_small.μ
 		τs, τs_accept = Vector{Any}[], []
 		for _ in 1:m
 			τ = rollout(sys_small, q; d=1)
