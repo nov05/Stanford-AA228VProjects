@@ -842,6 +842,7 @@ $(@bind rerun_small LargeCheckBox(text="⟵ Click to re-run the <code>SmallSyste
 baseline_details(sys_medium; n_baseline=n_baseline_medium, descr="pendulum", max_steps)
 
 # ╔═╡ 0cff0bac-9e42-474f-8ea0-b8a885d2e4c7
+## Nov05: code explanation
 println(max_steps(sys_medium), " ", get_depth(sys_medium))
 
 # ╔═╡ 38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
@@ -1327,7 +1328,7 @@ begin
 
 	# objective(x, sys, ψ) = robustness_objective(x, sys, ψ, smoothness=1.0)
 	objective(x, sys, ψ) = weighted_likelihood_objective(
-		x, sys, ψ; smoothness=0.5, λ=0.02)
+		x, sys, ψ; smoothness=1.0, λ=0.053)
 		
 	function lbfgs(f, sys, ψ)
 	    x₀ = zeros(20)
