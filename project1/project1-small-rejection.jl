@@ -424,15 +424,6 @@ The environment is a standard normal (Gaussian) distribution $\mathcal{N}(0, 1)$
 # ╔═╡ 9c1daa96-76b2-4a6f-8d0e-f95d26168d2b
 ps_small = Ps(sys_small.env)
 
-# ╔═╡ 7980c564-6cee-4d46-9f26-1d0b6fe831bc
-## Nov05: code explanation
-begin
-	println(sys_small.env)
-	println(Ps(sys_small.env))  ## ps_small
-	local p̄ = τ -> pdf(ps_small, τ)  ## target density function
-	println(p̄(-1.4))
-end
-
 # ╔═╡ ab4c6807-5b4e-4688-b794-159e26a1599b
 ψ_small = LTLSpecification(@formula □(s->s > -2));
 
@@ -585,36 +576,6 @@ Example rollouts of the pendulum system and their plot below.
 # ╔═╡ f005da72-d7b5-4f01-8882-ed4e2bdcf4bd
 n_baseline_medium = 41_000
 
-# ╔═╡ d75f34d3-384c-486b-b648-61ef8fd52167
-Markdown.parse("""
-**Large likelihood values.** \$\\,\$ _It's perfectly normal for the likelihood to be extremely large, \$\\exp(\\ell) \\gg 1\$, this is because we're dealing with probablity **density** functions which will **integrate** to one. Don't be alarmed._
-
-_This is particularly apparent when the distribution has **small variance**. Here's an example at \$x = 0\$:_
-```julia
- pdf(Normal(0, 1e-15), 0) # $(round(pdf(Normal(0, 1e-15), 0), sigdigits=3))
-```
-
-*For the inverted pendulum, the `AdditiveNoiseSensor` is a multivariate Gaussian with mean zeros and diagonal standard deviation of \$\\sigma = \\mathit{0.1}\$. Say the disturbances were \$\\mathit{x_t = [\\!0,0]}\$ for all \$d = \\mathit{41}\$ steps, the trajectory likelihood would be:*
-
-\$\$\\prod_{t=1}^{41} p(x_t) \\quad \\text{where} \\quad x_t \\sim \\mathcal{N}(\\mathbf{0}, 0.1^2I)\$\$
-
-*For the disturbances \$\\mathbf{x} = \\big\\{[0,0], \\ldots, [0,0]\\big\\}\$ (the most-likely values of \$x_t\$), we get the following likelihood:*
-
-```julia
- prod(pdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41) # $(round(prod(pdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41), sigdigits=3))
-```
-
-_Note that this ignores the initial state distribution._
-
-_But we tend to work with **log likelihoods** to avoid numerical issues with these large magnitude numbers._
-
-\$\$\\sum_{t=1}^{41} \\log p(x_t) \\quad \\text{where} \\quad x_t \\sim \\mathcal{N}(\\mathbf{0}, 0.1^2I)\$\$
-
-```julia
- sum(logpdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41) # $(round(sum(logpdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41), digits=3))
-```
-""")
-
 # ╔═╡ bac5c489-553c-436f-b332-8a8e97126a51
 html_quarter_space()
 
@@ -716,89 +677,69 @@ alg = DirectFalsification(1, $(max_steps(sys_small)))
 **Note**: _But we want to use the `NominalTrajectoryDistribution` to keep the algorithm general for the medium/large problems that **do** have disturbances._
 """)])
 
-# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
-@tracked function most_likely_failure_baseline(sys, ψ; n=max_steps(sys), full=false)
-	d = get_depth(sys)
-	m = n ÷ d                                          # Get num rollouts, \div for ÷
-	pτ = NominalTrajectoryDistribution(sys, d)         # Trajectory distribution
-	τs = [rollout(sys, pτ; d) for _ in 1:m]            # Rollout with pτ, m*d steps
-	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs.
-	τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) # Most-likely failure traj
-	return full ? (τ_most_likely, τs) : τ_most_likely     # Return MLF, or all trajs.
-end
-
-# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
-function run_baseline(sys::System, ψ; n, seed=4)
-	Random.seed!(seed)
-	τ, τs = most_likely_failure_baseline(sys, ψ; n, full=true)
-	d = get_depth(sys)
-	p = NominalTrajectoryDistribution(sys, d)
-	ℓ = logpdf(p, τ)
-	n = stepcount()
-	return (τ=τ, τs=τs, ℓ=ℓ, n=n) # return these variables as a NamedTuple
-end
-
-# ╔═╡ 3385fcb3-8b93-4da8-ba75-77877cc77ce4
-baseline_small_results = run_baseline(sys_small, ψ_small; n=n_baseline_small);
-
-# ╔═╡ 73da2a56-8991-4484-bcde-7d397214e552
-Markdown.parse("""
-### Baseline results (small)
-
-\$\$\\begin{align}
-\\ell_\\text{baseline} &= $(round(baseline_small_results.ℓ, digits=3))\\tag{failure log-likelihood} \\\\
-n_\\text{steps} &= $(baseline_small_results.n) \\tag{number of \\texttt{step} calls}
-\\end{align}\$\$
-
-Reminder that the number of `step` calls \$n\$ is equal to the number of rollouts \$m\$ for the small system. This is because the rollout depth is \$d=1\$.
-""")
-
-# ╔═╡ 77a6e704-33e8-4241-84f0-0e58c29c06ef
-baseline_medium_results = run_baseline(sys_medium, ψ_medium; n=n_baseline_medium);
-
-# ╔═╡ 7ef66a50-6acc-474f-b406-7b27a7b18510
-Markdown.parse("""
-\$\$\\begin{align}
-\\ell_\\text{baseline} &= $(round(baseline_medium_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
-n_\\text{steps} &= $(format(baseline_medium_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
-\\end{align}\$\$
-""")
-
 # ╔═╡ 42456abf-4930-4b01-afd1-fce3b4881e28
 baseline_details(sys_small; n_baseline=n_baseline_small, descr="simple Gaussian", max_steps)
 
 # ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
 begin
-	struct FuzzingDistribution <: TrajectoryDistribution
-		# Σₒ ## sensor disturbance covariance
+	## Rejection sampling
+	struct ProposalNormalDistribution <: TrajectoryDistribution
 		μ
 		δ
 	end
 	function StanfordAA228V.disturbance_distribution(
-		p::FuzzingDistribution, t)
+		p::ProposalNormalDistribution, t)
 		D = DisturbanceDistribution((o) -> Deterministic(),
 									(s,a) -> Deterministic(),
-									(s) -> Normal(p.μ, p.δ))
+									(s) -> Deterministic())
 		return D
 	end
-	function StanfordAA228V.initial_state_distribution(p::FuzzingDistribution)
+	function StanfordAA228V.initial_state_distribution(p::ProposalNormalDistribution)
 		return Normal(p.μ, p.δ)
 	end
-	StanfordAA228V.depth(p::FuzzingDistribution) = get_depth(sys_small)
+	StanfordAA228V.depth(p::ProposalNormalDistribution) = get_depth(sys_small)
 	@small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys), full=false)
 		# TODO: WRITE YOUR CODE HERE
 		d = get_depth(sys)
 		m = n ÷ d  ## Get num of rollouts 
-		q = FuzzingDistribution(0, 2)  
-		τs = [rollout(sys_small, q; d=d) for _ in 1:m]
+		## get failure threshold γ 
+		## Get γ from the specification is basically cheating.
+		## However in real life we could esitmate γ.
+		# γ = estimate_failure_threshold()  ## This will increase steps.
+		γ = NaN
+		try
+			γ = ψ.formula.ϕ.c  
+		catch e
+			# println(fieldnames(typeof(ψ.formula.ϕ.c_encoded.)))
+			γ = ψ.formula.ϕ.c_encoded._c
+		end
+		## hand-designed proposal distribution
+		q = ProposalNormalDistribution(γ, 1)  
+		c = pdf(ps_small, γ) / pdf(ps_small, 0)
+		μ = ps_small.μ
+		τs, τs_accept = Vector{Any}[], []
+		for _ in 1:m
+			τ = rollout(sys_small, q; d=1)
+			push!(τs, τ)
+			accept = true
+			for i in 1:length(τ)
+				if pdf(ps_small, τ[i].s) > c * pdf(q, τ[i].s)
+					accept = false
+					break
+				end
+			end
+			if accept == true
+				push!(τs_accept, τ)
+			end
+		end
 		## Filter to get failure trajactories, type Vector{Any}
-		τs_failures = filter(τ->isfailure(ψ, τ), τs)  
+		τs_failures = filter(τ->isfailure(ψ, τ), τs_accept)  
 		num_failures = length(τs_failures)
 		## Most-likely failure trajactory
 		# τ_most_likely = argmax(τ->logpdf(ps_small, τ[d].s), τs_failures) 
 		pτ = NominalTrajectoryDistribution(sys, d)
 		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
-		println("👉 Nov05: Got $num_failures failures out of $m rollouts.")
+		println("👉 Nov05: γ = $γ. Got $num_failures failures out of $m rollouts.")
 		## τs has to be Vector{Any}[[]]
 		return full ? (τ_most_likely, τs) : τ_most_likely
 	end
@@ -900,17 +841,6 @@ n_baseline_large = 410_000
 # ╔═╡ 35434537-9b9c-4528-b58c-420d01813598
 baseline_details(sys_large; n_baseline=n_baseline_large, descr="CAS", max_steps)
 
-# ╔═╡ 06b14338-ea3b-45c8-bf6c-28b82db2ea70
-baseline_large_results = run_baseline(sys_large, ψ_large; n=n_baseline_large);
-
-# ╔═╡ 204feed7-cde8-40a8-b6b5-051a1c768fd9
-Markdown.parse("""
-\$\$\\begin{gather}
-\\ell_\\text{baseline} = $(round(baseline_large_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
-n_\\text{steps} = $(format(baseline_large_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
-\\end{gather}\$\$
-""")
-
 # ╔═╡ e3d6fdf1-3a9e-446b-8482-49d6f64b652e
 html_quarter_space()
 
@@ -971,15 +901,6 @@ $$\begin{gather}
 _The maximum possible score is $0$ (but is impossible as the mean trajectories are not failures for these systems)._
 """
 
-# ╔═╡ 54741d81-39e0-4a47-b84d-c41c8eb7611b
-function score(sys::System, τ)
-	ps = NominalTrajectoryDistribution(sys, get_depth(sys))
-	τ_mean = mean_rollout(sys, ps)
-	ℓ_mean = logpdf(ps, τ_mean)
-	ℓ = logpdf(ps, τ)
-	return ℓ - ℓ_mean
-end
-
 # ╔═╡ 6559cf16-a474-4533-a2c7-ccbc02480a76
 md"""
 Since the small system runs several tests, we take the average score over the tests:
@@ -1005,16 +926,6 @@ $$\begin{gather}
 \text{score} = \mathbf{w}^\top\mathbf{s}
 \end{gather}$$
 """
-
-# ╔═╡ 5c3d24f6-0106-444c-b7df-89bba8c01b37
-function leaderboard_scores(systems::Vector{<:System}, τs; 𝐰=ones(length(τs)))
-	score_small = mean(score(systems[1], τ) for τ in τs[1])
-	score_medium = score(systems[2], τs[2])
-	score_large = score(systems[3], τs[3])
-	𝐬 = [score_small, score_medium, score_large]
-	𝐰 = 𝐰 ./ sum(𝐰)
-	return 𝐰'𝐬
-end
 
 # ╔═╡ 4edc5933-9457-4c7c-8456-a26974e0587e
 html_half_space()
@@ -1243,20 +1154,6 @@ begin
 	md"> _Helper for opening local directories._"
 end
 
-# ╔═╡ db7d4de5-9166-4e56-b5bc-1356e43286a9
-begin
-	function log_likelihood(sys::System, τ)
-		ps = NominalTrajectoryDistribution(sys, get_depth(sys))
-		ℓ = logpdf(ps, τ)
-		return ℓ
-	end
-
-	rd(x::String) = x
-	rd(x::Number) = round(x; sigdigits=6)
-
-	md"> _Leaderboard helper functions._"
-end
-
 # ╔═╡ 5a1ed20d-788b-4655-bdd8-069545f48929
 begin
 	extract(sys::System, input) = extract(sys.env, input)
@@ -1362,6 +1259,159 @@ end
 
 # ╔═╡ 7e9405c4-1d1d-4cfa-9fab-a3471c8ad119
 separator()
+
+# ╔═╡ 99339695-f201-4e57-afe7-bf541d1c90fa
+## Nov05: code explanation, direction sampling
+## Sample from the hand-designed distribution (blue curve)
+begin 
+	function Distributions.logpdf(p::TrajectoryDistribution, x::Float64)
+	    logprob = logpdf(initial_state_distribution(p), x)
+	    return logprob
+	end
+	Distributions.pdf(p::TrajectoryDistribution, x::Float64) = exp(logpdf(p, x))
+	local c = pdf(ps_small, γ) / pdf(ps_small, 0)
+	local q = ProposalNormalDistribution(γ, 1)
+	xs = -4:0.01:4
+	ys = [c * Distributions.pdf(q, x) for x in xs]
+	ys_p = [Distributions.pdf(ps_small, x) for x in xs] ## target distribution
+	plot(xs, ys, label="Proposal Distribution (Gaussian)", lw=2)
+	plot!(xs, ys_p, label="Small System (Gaussian)", lw=2, linestyle=:dash, color=:darkred)
+	vline!([γ], label="γ = $γ", color=:darkred, linestyle=:dash)
+	fill_xs = ifelse(γ > 0, γ:0.01:3, -3:0.01:γ)
+	fill_ys = [Distributions.pdf(ps_small, x) for x in fill_xs]
+	plot!(fill_xs, fill_ys, fill=(0, :darkred), fillalpha=0.3, label="Failure", color=:darkred)
+end
+
+# ╔═╡ 7980c564-6cee-4d46-9f26-1d0b6fe831bc
+## Nov05: code explanation
+begin
+	println(sys_small.env)
+	println(Ps(sys_small.env))  ## ps_small
+	local p̄ = τ -> pdf(ps_small, τ)  ## target density function
+	println(p̄(-1.4))
+end
+
+# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
+@tracked function most_likely_failure_baseline(sys, ψ; n=max_steps(sys), full=false)
+	d = get_depth(sys)
+	m = n ÷ d                                          # Get num rollouts, \div for ÷
+	pτ = NominalTrajectoryDistribution(sys, d)         # Trajectory distribution
+	τs = [rollout(sys, pτ; d) for _ in 1:m]            # Rollout with pτ, m*d steps
+	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs.
+	τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) # Most-likely failure traj
+	return full ? (τ_most_likely, τs) : τ_most_likely     # Return MLF, or all trajs.
+end
+
+# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
+function run_baseline(sys::System, ψ; n, seed=4)
+	Random.seed!(seed)
+	τ, τs = most_likely_failure_baseline(sys, ψ; n, full=true)
+	d = get_depth(sys)
+	p = NominalTrajectoryDistribution(sys, d)
+	ℓ = logpdf(p, τ)
+	n = stepcount()
+	return (τ=τ, τs=τs, ℓ=ℓ, n=n) # return these variables as a NamedTuple
+end
+
+# ╔═╡ 3385fcb3-8b93-4da8-ba75-77877cc77ce4
+baseline_small_results = run_baseline(sys_small, ψ_small; n=n_baseline_small);
+
+# ╔═╡ 73da2a56-8991-4484-bcde-7d397214e552
+Markdown.parse("""
+### Baseline results (small)
+
+\$\$\\begin{align}
+\\ell_\\text{baseline} &= $(round(baseline_small_results.ℓ, digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} &= $(baseline_small_results.n) \\tag{number of \\texttt{step} calls}
+\\end{align}\$\$
+
+Reminder that the number of `step` calls \$n\$ is equal to the number of rollouts \$m\$ for the small system. This is because the rollout depth is \$d=1\$.
+""")
+
+# ╔═╡ 77a6e704-33e8-4241-84f0-0e58c29c06ef
+baseline_medium_results = run_baseline(sys_medium, ψ_medium; n=n_baseline_medium);
+
+# ╔═╡ 7ef66a50-6acc-474f-b406-7b27a7b18510
+Markdown.parse("""
+\$\$\\begin{align}
+\\ell_\\text{baseline} &= $(round(baseline_medium_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} &= $(format(baseline_medium_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
+\\end{align}\$\$
+""")
+
+# ╔═╡ 06b14338-ea3b-45c8-bf6c-28b82db2ea70
+baseline_large_results = run_baseline(sys_large, ψ_large; n=n_baseline_large);
+
+# ╔═╡ 204feed7-cde8-40a8-b6b5-051a1c768fd9
+Markdown.parse("""
+\$\$\\begin{gather}
+\\ell_\\text{baseline} = $(round(baseline_large_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} = $(format(baseline_large_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
+\\end{gather}\$\$
+""")
+
+# ╔═╡ d75f34d3-384c-486b-b648-61ef8fd52167
+Markdown.parse("""
+**Large likelihood values.** \$\\,\$ _It's perfectly normal for the likelihood to be extremely large, \$\\exp(\\ell) \\gg 1\$, this is because we're dealing with probablity **density** functions which will **integrate** to one. Don't be alarmed._
+
+_This is particularly apparent when the distribution has **small variance**. Here's an example at \$x = 0\$:_
+```julia
+ pdf(Normal(0, 1e-15), 0) # $(round(pdf(Normal(0, 1e-15), 0), sigdigits=3))
+```
+
+*For the inverted pendulum, the `AdditiveNoiseSensor` is a multivariate Gaussian with mean zeros and diagonal standard deviation of \$\\sigma = \\mathit{0.1}\$. Say the disturbances were \$\\mathit{x_t = [\\!0,0]}\$ for all \$d = \\mathit{41}\$ steps, the trajectory likelihood would be:*
+
+\$\$\\prod_{t=1}^{41} p(x_t) \\quad \\text{where} \\quad x_t \\sim \\mathcal{N}(\\mathbf{0}, 0.1^2I)\$\$
+
+*For the disturbances \$\\mathbf{x} = \\big\\{[0,0], \\ldots, [0,0]\\big\\}\$ (the most-likely values of \$x_t\$), we get the following likelihood:*
+
+```julia
+ prod(pdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41) # $(round(prod(pdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41), sigdigits=3))
+```
+
+_Note that this ignores the initial state distribution._
+
+_But we tend to work with **log likelihoods** to avoid numerical issues with these large magnitude numbers._
+
+\$\$\\sum_{t=1}^{41} \\log p(x_t) \\quad \\text{where} \\quad x_t \\sim \\mathcal{N}(\\mathbf{0}, 0.1^2I)\$\$
+
+```julia
+ sum(logpdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41) # $(round(sum(logpdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41), digits=3))
+```
+""")
+
+# ╔═╡ 54741d81-39e0-4a47-b84d-c41c8eb7611b
+function score(sys::System, τ)
+	ps = NominalTrajectoryDistribution(sys, get_depth(sys))
+	τ_mean = mean_rollout(sys, ps)
+	ℓ_mean = logpdf(ps, τ_mean)
+	ℓ = logpdf(ps, τ)
+	return ℓ - ℓ_mean
+end
+
+# ╔═╡ 5c3d24f6-0106-444c-b7df-89bba8c01b37
+function leaderboard_scores(systems::Vector{<:System}, τs; 𝐰=ones(length(τs)))
+	score_small = mean(score(systems[1], τ) for τ in τs[1])
+	score_medium = score(systems[2], τs[2])
+	score_large = score(systems[3], τs[3])
+	𝐬 = [score_small, score_medium, score_large]
+	𝐰 = 𝐰 ./ sum(𝐰)
+	return 𝐰'𝐬
+end
+
+# ╔═╡ db7d4de5-9166-4e56-b5bc-1356e43286a9
+begin
+	function log_likelihood(sys::System, τ)
+		ps = NominalTrajectoryDistribution(sys, get_depth(sys))
+		ℓ = logpdf(ps, τ)
+		return ℓ
+	end
+
+	rd(x::String) = x
+	rd(x::Number) = round(x; sigdigits=6)
+
+	md"> _Leaderboard helper functions._"
+end
 
 # ╔═╡ e29b6ddd-d3da-4122-a561-18bc267e2047
 separator()
@@ -1474,12 +1524,34 @@ end
 # ╔═╡ 57d321cd-2029-4e49-8b56-9c5c48721ac4
 ψ_small_slider = create_specification(γ);
 
+# ╔═╡ 4069db5c-e26b-4bcf-9136-0a59ebf802d9
+## Nov05: estimate γ from samples
+begin
+	function estimate_failure_threshold(sys::SmallSystem=sys_small, ψ=ψ_small_slider; m=1000)
+		d = get_depth(sys)
+		pτ = NominalTrajectoryDistribution(sys, d)
+		τs = [rollout(sys, pτ; d=d) for _ in 1:m]
+		τs_failures = filter(τ->isfailure(ψ, τ), τs)  ## Vector{Any}[[]]
+		ss = [τ[d].s for τ in τs_failures]
+		s_min = minimum(ss)
+		if s_min > 0.0
+			return s_min
+		end
+		s_max = maximum(ss)
+		if s_max <= 0.0
+			return s_max
+		end
+		return 0.0
+	end
+	println(estimate_failure_threshold())
+end
+
 # ╔═╡ ffae531d-9be7-44fa-83fa-d60908a4f9a1
 ## Nov05: code explanation, rejection sampling
 ## Find function roullout() definition in system.jl
 ## Find isfailure() in specification.jl
 begin
-	function run_fuzzing(sys::System, ψ; n, seed=42)
+	function run_reject_sampling(sys::System, ψ; n, seed=42)
 		Random.seed!(seed)
 		τ, τs = most_likely_failure(sys, ψ; n, full=true)
 		d = get_depth(sys)
@@ -1491,9 +1563,17 @@ begin
 	## Changing the spec violates the honor code
 	## The comparison operator flips when γ > 0
 	# ψ_test = create_specification(γ)  
-	local results = run_fuzzing(sys_small, ψ_small_slider; n=n_baseline_small)
-	println("τ_most_likely = ", results.τ[1].s, ", type: ", typeof(results.τ))
-	println("log_likelihood(sys_small, τ): ", log_likelihood(sys_small, results.τ))
+	local results = run_reject_sampling(sys_small, ψ_small_slider; n=n_baseline_small)
+	## get c for rejection sampling
+	local c = pdf(ps_small, γ) / pdf(ps_small, 0)
+	println("γ = $γ, c = $c, n_baseline_small = $n_baseline_small")
+	local q = ProposalNormalDistribution(γ, 1)
+	println("p(γ) = ", pdf(ps_small, γ), " c*q(γ) = ", c * pdf(q, γ))
+	local τ = rollout(sys_small, q; d=1)
+	println("Sample from q: ", τ[1].s)
+	println("τ_most_likely = ", results.τ[1].s, " ", typeof(results.τ))
+	println("⚠️ log_likelihood(sys_small, τ): ", log_likelihood(sys_small, results.τ))
+	println("The last sample τ = ", results.τs[n_baseline_small][end].s)
 	## plot
 	plot(sys_small, ψ_small_slider, results.τs)
 	title!("States from reject sampling")
@@ -3855,7 +3935,9 @@ version = "1.8.1+0"
 # ╟─f6589984-e24d-4aee-b7e7-db159ae7fea6
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
+# ╠═4069db5c-e26b-4bcf-9136-0a59ebf802d9
 # ╠═ffae531d-9be7-44fa-83fa-d60908a4f9a1
+# ╠═99339695-f201-4e57-afe7-bf541d1c90fa
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
 # ╟─beaec161-ad89-4f83-9066-f420a1d04d39
