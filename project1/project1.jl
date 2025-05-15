@@ -843,7 +843,7 @@ baseline_details(sys_medium; n_baseline=n_baseline_medium, descr="pendulum", max
 
 # ╔═╡ 0cff0bac-9e42-474f-8ea0-b8a885d2e4c7
 ## Nov05: code explanation
-println(max_steps(sys_medium), " ", get_depth(sys_medium))
+println("System depth: ", get_depth(sys_medium), ", max steps: ", max_steps(sys_medium))
 
 # ╔═╡ 38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
 Markdown.MD(
@@ -871,7 +871,7 @@ end
 Markdown.MD(
 	Markdown.parse("""
 	# 3️⃣ **Large**: Aircraft Collision Avoidance
-	The large system is an aircraft collision avoidance system (CAS).
+	The large system is an aircraft **collision avoidance system (CAS)**.
 	- It uses an interpolated lookup-table policy.
 	- The state is comprised of the relative altitude (m) \$h\$, the relative vertical rate \$\\dot{h}\$ (m/s), the previous action \$a_\\text{prev}\$, and the time to closest point of approach \$t_\\text{col}\$ (sec): \$s = [h, \\dot{h}, a_\\text{prev}, t_\\text{col}]\$
 	- Actions are \$a \\in [-5, 0, 5]\$ vertical rate changes.
@@ -934,13 +934,12 @@ Please fill in the following `most_likely_failure` function.
 # ╔═╡ 18a70925-3c2a-4317-8bbc-c2a096ec56d0
 start_code()
 
-# ╔═╡ 3471a623-16af-481a-8f66-5bd1e7890188
-@large function most_likely_failure(sys::LargeSystem, ψ; n=max_steps(sys))
-	# TODO: WRITE YOUR CODE HERE
-end
-
 # ╔═╡ 4c5210d6-598f-4167-a6ee-93bceda7223b
 end_code()
+
+# ╔═╡ 3bcbc811-2b0d-4d2f-b299-570d9dafa155
+## Nov05: code explanation
+println(get_depth(sys_large), " ", max_steps(sys_large))
 
 # ╔═╡ 2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
 html_quarter_space()
@@ -1312,26 +1311,27 @@ begin
 	end
 
 	function robustness_objective(x, sys, ψ; smoothness=0.0)
-	    s, x = extract(sys.env, x)
-	    τ = rollout(sys, s, x)
+	    s, 𝐱 = extract(sys.env, x) ## 𝐱 == \bfx<TAB>
+	    τ = rollout(sys, s, 𝐱)
 	    s = [step.s for step in τ]
 	    return robustness(s, ψ.formula, w=smoothness)
 	end
 
 	function weighted_likelihood_objective(x, sys, ψ; smoothness=0.0, λ=1.0)
-	    s, x = extract(sys.env, x)
-	    τ = rollout(sys, s, x)
+	    s, 𝐱 = extract(sys.env, x)  ## 𝐱 == \bfx<TAB>
+	    τ = rollout(sys, s, 𝐱)
 	    s = [step.s for step in τ]
-	    p = NominalTrajectoryDistribution(sys, length(x))
+	    p = NominalTrajectoryDistribution(sys, length(𝐱))
 	    return robustness(s, ψ.formula, w=smoothness) - λ * log(pdf(p, τ))
 	end
 
 	# objective(x, sys, ψ) = robustness_objective(x, sys, ψ, smoothness=1.0)
 	objective(x, sys, ψ) = weighted_likelihood_objective(
-		x, sys, ψ; smoothness=1.0, λ=0.053)
-		
+		x, sys, ψ; smoothness=1.0, λ=0.053) 
+
+	## Limited-memory BFGS
 	function lbfgs(f, sys, ψ)
-	    x₀ = zeros(20)
+		x₀ = zeros(20)
 	    alg = Optim.LBFGS()
 	    options = Optim.Options(store_trace=true, extended_trace=true)
 	    results = Optim.optimize(f, x₀, alg, options; autodiff=:forward)
@@ -1345,6 +1345,116 @@ begin
 		# TODO: WRITE YOUR CODE HERE 
 		d = get_depth(sys)
 		alg = OptimizationBasedFalsification(objective, lbfgs)
+		τs_failures = falsify(alg, sys, ψ)
+		pτ = NominalTrajectoryDistribution(sys, d)
+		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
+	end
+end
+
+# ╔═╡ 3471a623-16af-481a-8f66-5bd1e7890188
+begin
+	## Tree Search
+	abstract type TreeSearch end
+	
+	function falsify(alg::TreeSearch, sys, ψ)
+	    tree = initialize_tree(alg, sys)
+	    for i in 1:alg.k_max
+	        node = select(alg, sys, ψ, tree)
+	        extend!(alg, sys, ψ, tree, node)
+	    end
+	    return failures(tree, sys, ψ)
+	end
+
+	## Get a trajectory from a leaf node
+	function trajectory(node)
+	    τ = []
+	    while !isnothing(node.parent)
+	        pushfirst!(τ, (s = node.parent.state, node.edge...))
+	        node = node.parent
+	    end
+	    return τ
+	end
+
+	## Get failure trajectories from a tree
+	function failures(tree, sys, ψ)
+	    leaves = filter(node -> isempty(node.children), tree)
+	    τs = [trajectory(node) for node in leaves]
+	    return filter(τ -> isfailure(ψ, τ), τs)
+	end
+	
+	## Monte Carlo Tree Search
+	struct MCTS <: TreeSearch
+	    estimate_value     # Q = estimate_value(sys, ψ, node)
+	    c                  # exploration constant
+	    k                  # progressive widening constant
+	    α                  # progressive widening exponent
+	    select_disturbance # x = select_disturbance(sys, node)
+	    k_max              # number of iterations
+	end
+	
+	mutable struct MCTSNode
+	    state      # node state s
+	    parent     # parent node
+	    edge       # (o, a, x)
+	    children   # vector of child nodes
+	    N          # visit count
+	    Q          # value estimate
+	end
+	
+	## Lower Confidence Bound (LCB)
+	function lcb(node::MCTSNode, c)
+	    Qs = [node.Q for node in node.children]
+	    Ns = [node.N for node in node.children]
+	    lcbs = [Q - c * sqrt(log(node.N) / N) for (Q, N) in zip(Qs, Ns)]
+	    return node.children[argmin(lcbs)]
+	end
+	
+	function initialize_tree(alg::MCTS, sys)
+	    return [MCTSNode(rand(Ps(sys.env)), nothing, nothing, [], 1, 0)]
+	end
+	
+	function select(alg::MCTS, sys, ψ, tree)
+	    c, k, α, node = alg.c, alg.k, alg.α, tree[1]
+	    while length(node.children) > k * node.N^α
+	        node = lcb(node, c) 
+	    end
+	    return node
+	end
+	
+	function extend!(alg::MCTS, sys, ψ, tree, node::MCTSNode)
+	    x′ = alg.select_disturbance(sys, node)
+	    o′, a′, s′ = step(sys, node.state, x′)
+	    Q = alg.estimate_value(sys, ψ, s′, x′)
+	    new_node = MCTSNode(s′, node, (; o′, a′, x′), [], 1, Q)
+	    push!(node.children, new_node)
+	    push!(tree, new_node)
+	    while !isnothing(node)
+	        node.N += 1
+	        node.Q += (Q - node.Q) / node.N
+	        Q, node = node.Q, node.parent
+	    end
+	end
+
+	function random_disturbance(sys, node::MCTSNode)
+	    D = DisturbanceDistribution(sys)
+	    o′, a′, s′, x′ = step(sys, node.state, D)
+	    return x′
+	end
+	select_disturbance(sys, node) = random_disturbance(sys, node::MCTSNode)
+	
+	# estimate_value = (sys, ψ, s) -> begin
+	# 	x = select_disturbance(sys, node)
+	# 	robustness_objective(x, sys, ψ, smoothness=1.0)
+	# end
+	estimate_value = (sys, ψ, s, x) -> begin
+		-weighted_likelihood_objective(x, sys, ψ; smoothness=1.0, λ=0.053)
+	end	
+	
+	@large function most_likely_failure(sys::LargeSystem, ψ; n=max_steps(sys))
+		# TODO: WRITE YOUR CODE HERE
+		d = get_depth(sys)
+		## estimate_value, c, k, α , select_disturbance, k_max
+		alg = MCTS(estimate_value, 1.414, 5, 0.5, select_disturbance, 200)
 		τs_failures = falsify(alg, sys, ψ)
 		pτ = NominalTrajectoryDistribution(sys, d)
 		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
@@ -2085,9 +2195,9 @@ weakdeps = ["SpecialFunctions"]
 
 [[deps.Colors]]
 deps = ["ColorTypes", "FixedPointNumbers", "Reexport"]
-git-tree-sha1 = "64e15186f0aa277e174aa81798f7eb8598e0157e"
+git-tree-sha1 = "362a287c3aa50601b0bc359053d5c2468f0e7ce0"
 uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
-version = "0.13.0"
+version = "0.12.11"
 
 [[deps.CommonMark]]
 deps = ["PrecompileTools"]
@@ -3988,6 +4098,7 @@ version = "1.8.1+0"
 # ╟─45c79345-89da-498c-9a98-2ad55a0a6114
 # ╠═3471a623-16af-481a-8f66-5bd1e7890188
 # ╟─4c5210d6-598f-4167-a6ee-93bceda7223b
+# ╠═3bcbc811-2b0d-4d2f-b299-570d9dafa155
 # ╟─2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
 # ╟─ea2d7eb7-d576-415c-ac4c-fea7f90de637
 # ╟─7c473630-6555-4ada-85f3-0d40aefe6370
@@ -4016,7 +4127,7 @@ version = "1.8.1+0"
 # ╟─98cbe931-d362-4039-97ba-41e0049619a3
 # ╟─247f4c17-bee1-4315-aff9-017407ef9219
 # ╟─db7d4de5-9166-4e56-b5bc-1356e43286a9
-# ╟─5a1ed20d-788b-4655-bdd8-069545f48929
+# ╠═5a1ed20d-788b-4655-bdd8-069545f48929
 # ╟─6c8b3077-876e-42fd-aa47-f3fa7c37f4dd
 # ╟─97042a5e-9691-493f-802e-2262f2da4627
 # ╟─9865ed62-b4fd-4e49-9259-3e5997c589f3
