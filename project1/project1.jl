@@ -1076,21 +1076,25 @@ begin
 	end	
 	estimate_value(sys, ψ, node) = weighted_likelihood_objective_tree(sys, ψ, node; r_max=r_max, r_depth=r_depth, smoothness=smoothness, λ=λ)
 
-	c, k, α, k_max = 10.0, 0.25, 0.4, 1000  ## MCTS parameters
-	smoothness, λ = 0.95, 0.0  ## robustness smoothness, likelihood weight
-	r_max, r_depth = 10, 10   ## robustness rollout times and depth
+	c, k, α, k_max = 0.8, 0.41, 0.38, 1300  ## MCTS parameters
+	smoothness, λ = 0.92, 0.2  ## robustness smoothness, likelihood weight
+	r_max, r_depth = 1, 5   ## robustness rollout number and depth
 
-	@large function most_likely_failure(sys::LargeSystem, ψ; n=max_steps(sys), plotting=false)
+	@large function most_likely_failure(sys::LargeSystem, ψ; n=max_steps(sys), full=false)
 		# TODO: WRITE YOUR CODE HERE
 		## MCTS: estimate_value, c, k, α, select_disturbance, k_max
 		alg = MCTS(estimate_value, c, k, α, select_disturbance, k_max)
-		τs_failures, τs = falsify(alg, sys, ψ; full=true)
-		plotting && return τs
+		if full
+			τs_failures, τs = falsify(alg, sys, ψ; full=true)
+		else
+			τs_failures = falsify(alg, sys, ψ; full=false)
+		end
+		τ_most_likely = nothing
 		if length(τs_failures) > 0
 			pτ = NominalTrajectoryDistribution(sys, get_depth(sys))
 			τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
-			return τ_most_likely
 		end
+		return full ? (τ_most_likely, τs) : τ_most_likely
 	end
 end
 
@@ -1632,10 +1636,16 @@ plot(sys_large, ψ_large, baseline_large_results.τs)
 # ╔═╡ 4ae85f59-4e94-48aa-8ccb-91311466c51f
 plot(sys_large, ψ_large, baseline_large_results.τ)
 
-# ╔═╡ 5315194a-6c0e-4e61-9107-92035267e923
+# ╔═╡ d150d07a-d020-41bf-9399-7acc9d1361db
 ## Nov05: testing
 begin
-	local τs = most_likely_failure(sys_large, ψ_large, plotting=true)
+	local τs = []
+	for _ in 1:100
+		_, τs = most_likely_failure(sys_large, ψ_large, full=true)
+		if !isempty(τs)
+			break
+		end
+	end
 	plot(sys_large, ψ_large, τs)
 end
 
@@ -1923,7 +1933,7 @@ begin
 		global user_score, user_score_rd = 
 			check_inf(leaderboard_scores(
 				[sys_small, sys_medium, sys_large],
-				[τ_small, τ_medium, τ_large]; 𝐰=𝐰))
+				[τs_small, τ_medium, τ_large]; 𝐰=𝐰))  ## Nov05: bug fix
 	catch end
 
 
@@ -4169,8 +4179,8 @@ version = "1.8.1+0"
 # ╟─45c79345-89da-498c-9a98-2ad55a0a6114
 # ╠═3471a623-16af-481a-8f66-5bd1e7890188
 # ╟─4c5210d6-598f-4167-a6ee-93bceda7223b
+# ╠═d150d07a-d020-41bf-9399-7acc9d1361db
 # ╠═3bcbc811-2b0d-4d2f-b299-570d9dafa155
-# ╠═5315194a-6c0e-4e61-9107-92035267e923
 # ╟─2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
 # ╟─ea2d7eb7-d576-415c-ac4c-fea7f90de637
 # ╟─7c473630-6555-4ada-85f3-0d40aefe6370
