@@ -950,13 +950,13 @@ begin
 	## Tree Search
 	abstract type TreeSearch end
 	
-	function falsify(alg::TreeSearch, sys, ψ)
+	function falsify(alg::TreeSearch, sys, ψ; full=false)
 	    tree = initialize_tree(alg, sys)
 	    for i in 1:alg.k_max
 	        node = select(alg, sys, ψ, tree)
 	        extend!(alg, sys, ψ, tree, node)
 	    end
-	    return failures(tree, sys, ψ)
+	    return failures(tree, sys, ψ; full=full)
 	end
 
 	## Get a trajectory from a leaf node
@@ -970,13 +970,13 @@ begin
 	end
 
 	## Get failure trajectories from a tree
-	function failures(tree, sys, ψ)
+	function failures(tree, sys, ψ; full=false)
 		d = get_depth(sys)
 	    leaves = filter(node -> isempty(node.children), tree)
 	    τs = [trajectory(node) for node in leaves if length(trajectory(node))>=d]
 		println("👉 The tree has ", length(leaves), " leaves out of ", length(tree), " nodes at step ", stepcount(), ".")
-		println([τ[41].s[1] for τ in τs])
-	    return filter(τ -> isfailure(ψ, τ), τs)
+		println("   Final states: ",  [τ[41].s[1] for τ in τs])
+	    return full ? (filter(τ -> isfailure(ψ, τ), τs), τs) : filter(τ -> isfailure(ψ, τ), τs)
 	end
 	
 	## Monte Carlo Tree Search
@@ -1007,7 +1007,7 @@ begin
 	function select(alg::MCTS, sys, ψ, tree)
 	    c, k, α, node = alg.c, alg.k, alg.α, tree[1]
 		# println("👉 length(node.children)=", length(node.children), ", k*node.N^α=" , k * node.N^α)
-	    while length(node.children) > k * node.N^α
+	    while length(node.children) > k * node.N^α  ## k>0, 0<α<1
 	        node = lcb(node, c) 
 	    end
 	    return node
@@ -1036,10 +1036,10 @@ begin
 	    Qs = [node.Q for node in node.children]
 	    Ns = [node.N for node in node.children]
 	    lcbs = [Q - c * sqrt(log(node.N) / N) for (Q, N) in zip(Qs, Ns)]
-		for (Q, N) in zip(Qs, Ns)
-			println("👉 ", Q, " ", sqrt(log(node.N) / N))
-		end
-		# println("👉 lcbs: ", lcbs)
+		# for (Q, N) in zip(Qs, Ns)
+		# 	println("👉 Q=", Q, ", sqrt(log(node.N)/N)=", sqrt(log(node.N) / N))
+		# end
+		# println("  lcbs: ", lcbs)
 	    return node.children[argmin(lcbs)]
 	end
 	
@@ -1050,30 +1050,47 @@ begin
 	end
 	select_disturbance(sys, node) = random_disturbance(sys, node::MCTSNode)
 
-	function weighted_likelihood_objective_tree(sys, ψ, node; smoothness=0.0, λ=1.0)
+	function weighted_likelihood_objective_tree(sys, ψ, node; r_max=1, r_depth=10, smoothness=0.0, λ=1.0)
 		s = node.state
-		if s[4]<0
-			return Inf
+		if s[4]<0   ## Set Q=Inf for the final step
+			return Inf  
 		end
-		τ = trajectory(node)  ## get previous steps for the trajectory
+		τ₀ = trajectory(node)  ## get previous steps for the trajectory
 		p = NominalTrajectoryDistribution(sys, get_depth(sys))
-	    τ = vcat(τ, rollout(sys, s, p; d=s[4]+1))  ## step.s[4] is t_col
-	    𝐬 = [step.s for step in τ]  ## 𝐬 is \bfs<TAB>
-		if isnan(robustness(𝐬, ψ.formula, w=smoothness))
-			error("⚠️ Robustness evaluated to NaN — possibly due to instability from smoothness = $smoothness")
+		r, τ = NaN, []
+		for _ in 1:r_max
+			## step.s[4] is t_col
+		    τ′ = vcat(τ₀, rollout(sys, s, p; d=min(r_depth, s[4]+1))) 
+			## 𝐬 is \bfs<TAB>
+		    𝐬 = vcat(fill(nothing, get_depth(sys)-length(τ′)), [step.s for step in τ′]) 
+			r′ = robustness(𝐬, ψ.formula, w=smoothness)
+			if isnan(r′)
+				error("⚠️ Robustness evaluated to NaN — possibly due to instability from smoothness = $smoothness")
+			end
+			if isnan(r) || r > r′
+				r, τ = r′, τ′
+			end
 		end
-		println("👉 robustness=", robustness(𝐬, ψ.formula, w=smoothness), " logpdf(p, τ)=", logpdf(p, τ))
-	    return robustness(𝐬, ψ.formula, w=smoothness) - λ * logpdf(p, τ)
+		# println("👉 robustness=", r, "， logpdf(p, τ)=", logpdf(p, τ))
+	    return r - λ * logpdf(p, τ)
 	end	
-	estimate_value(sys, ψ, node) = weighted_likelihood_objective_tree(sys, ψ, node; smoothness=2.0, λ=0.001)
-	
-	@large function most_likely_failure(sys::LargeSystem, ψ; n=max_steps(sys))
+	estimate_value(sys, ψ, node) = weighted_likelihood_objective_tree(sys, ψ, node; r_max=r_max, r_depth=r_depth, smoothness=smoothness, λ=λ)
+
+	c, k, α, k_max = 10.0, 0.25, 0.4, 1000  ## MCTS parameters
+	smoothness, λ = 0.95, 0.0  ## robustness smoothness, likelihood weight
+	r_max, r_depth = 10, 10   ## robustness rollout times and depth
+
+	@large function most_likely_failure(sys::LargeSystem, ψ; n=max_steps(sys), plotting=false)
 		# TODO: WRITE YOUR CODE HERE
 		## MCTS: estimate_value, c, k, α, select_disturbance, k_max
-		alg = MCTS(estimate_value, 60.0, 2.0, 0.5, select_disturbance, 20000)
-		τs_failures = falsify(alg, sys, ψ)
-		pτ = NominalTrajectoryDistribution(sys, get_depth(sys))
-		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
+		alg = MCTS(estimate_value, c, k, α, select_disturbance, k_max)
+		τs_failures, τs = falsify(alg, sys, ψ; full=true)
+		plotting && return τs
+		if length(τs_failures) > 0
+			pτ = NominalTrajectoryDistribution(sys, get_depth(sys))
+			τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
+			return τ_most_likely
+		end
 	end
 end
 
@@ -1084,11 +1101,15 @@ end_code()
 ## Nov05: code explanation
 begin
 	println("System depth: ", get_depth(sys_large), ", max steps: ", max_steps(sys_large))
-	println(fieldnames(typeof(DisturbanceDistribution(sys_large))))
+	println("sys_large fields: ", fieldnames(typeof(DisturbanceDistribution(sys_large))))
 	local p = NominalTrajectoryDistribution(sys_large, get_depth(sys_large))
 	local s = rand(initial_state_distribution(p))
 	local τ = rollout(sys_large, s, p; d=depth(p))
-	println("Trajectory depth = ", depth(p), ", s = ", s, ", logpdf(p, τ) = ", logpdf(p, τ))
+	println("Trajectory depth=", depth(p), ", s=", s, ", logpdf(p, τ)=", logpdf(p, τ))
+	println("ψ_large: ", fieldnames(typeof(ψ_large.formula.I)), " ", ψ_large.formula.I.start)
+	for _ in 1:1
+		print("Hi!")
+	end
 end
 
 # ╔═╡ 2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
@@ -1610,6 +1631,13 @@ plot(sys_large, ψ_large, baseline_large_results.τs)
 
 # ╔═╡ 4ae85f59-4e94-48aa-8ccb-91311466c51f
 plot(sys_large, ψ_large, baseline_large_results.τ)
+
+# ╔═╡ 5315194a-6c0e-4e61-9107-92035267e923
+## Nov05: testing
+begin
+	local τs = most_likely_failure(sys_large, ψ_large, plotting=true)
+	plot(sys_large, ψ_large, τs)
+end
 
 # ╔═╡ 36b510f5-31a2-4c94-9705-cd66e98e2e61
 separator()
@@ -4142,6 +4170,7 @@ version = "1.8.1+0"
 # ╠═3471a623-16af-481a-8f66-5bd1e7890188
 # ╟─4c5210d6-598f-4167-a6ee-93bceda7223b
 # ╠═3bcbc811-2b0d-4d2f-b299-570d9dafa155
+# ╠═5315194a-6c0e-4e61-9107-92035267e923
 # ╟─2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
 # ╟─ea2d7eb7-d576-415c-ac4c-fea7f90de637
 # ╟─7c473630-6555-4ada-85f3-0d40aefe6370
