@@ -45,6 +45,14 @@ begin
 	md"> _Additional package management._"
 end
 
+# ╔═╡ 54107cf5-8c8f-495f-8709-07b904ca98ae
+md"* Pluto notebook worked on by Nov05 on 2025-05-17  
+* Check [the project documentation](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.jdlp0w7brg0)  
+* Check [the FAQs](https://github.com/nov05/Stanford-AA228VProjects/blob/main/AA228V-FAQs.md)  
+* Check the Julia package \"StanfordAA228V\" [source code](.julia/packages/StanfordAA228V)  
+* Check [the textbook notes](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.qfey2q7ioy3x), e.g. Ctrl+F to search for \"fuzzing\"
+"
+
 # ╔═╡ 117d0059-ce1a-497e-8667-a0c2ef20c632
 md"""
 # Project 2: Estimating failure probability
@@ -3705,6 +3713,7 @@ version = "1.8.1+0"
 """
 
 # ╔═╡ Cell order:
+# ╟─54107cf5-8c8f-495f-8709-07b904ca98ae
 # ╟─6b17139e-6caf-4f07-a607-e403bf1ad794
 # ╠═14964632-98d8-4a2f-b2f6-e3f28b558803
 # ╟─117d0059-ce1a-497e-8667-a0c2ef20c632

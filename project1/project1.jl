@@ -1729,7 +1729,7 @@ end
 ψ_small_slider = create_specification(γ);
 
 # ╔═╡ ffae531d-9be7-44fa-83fa-d60908a4f9a1
-## Nov05: code explanation, rejection sampling
+## Nov05: code explanation, fuzzing
 ## Find function roullout() definition in system.jl
 ## Find isfailure() in specification.jl
 begin
@@ -1747,7 +1747,7 @@ begin
 	println("log_likelihood(sys_small, τ): ", log_likelihood(sys_small, results.τ))
 	## plot
 	plot(sys_small, ψ_small_slider, results.τs)
-	title!("States from reject sampling")
+	title!("States from Fuzzing")
 end
 
 # ╔═╡ d647ac21-738b-43e7-bbbd-582b6294560e
