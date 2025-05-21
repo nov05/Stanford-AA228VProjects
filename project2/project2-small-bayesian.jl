@@ -504,7 +504,9 @@ _The **graded** tests to be submitted to Gradescope are located [below](#graded-
 """
 
 # ╔═╡ b21a8170-fb12-4230-8a00-c11b9b2cf95a
-md"⚠️ Nov05: I believe the green vertical line indicating the baseline value in the plot on the right is incorrect—it appears to be showing the **Baseline Error** rather than the **Baseline**. Since `ThisProject.ψ2latex()` is loaded from the encoded `.project2` file, you can't verify or modify this behavior. You can only view the implementation in `backend.jl`, located at `.julia/packages/StanfordAA228V/h5BcH/src/notebook/backend.jl`, to confirm that it's encoded."
+md"⚠️ Nov05: I believe the green vertical line indicating the baseline value in the plot on the right is incorrect—it appears to be showing the **Baseline Error** rather than the **Baseline**. Since `ThisProject.rerun()` is loaded from the encoded `.project2` file, you can't verify or modify this behavior without decoding it, which would be a violation of the honor code. You can only view the implementation in `backend.jl`, located at `.julia/packages/StanfordAA228V/h5BcH/src/notebook/backend.jl`, to confirm that it's encoded.  
+
+✅ "
 
 # ╔═╡ 535261e3-4cb3-4b0b-954d-7452b2a91b5d
 begin
@@ -1103,7 +1105,7 @@ _This was run on an Ubuntu server with about `530 GB` of RAM over `127` cores._
 html_half_space()
 
 # ╔═╡ d27a5e1b-b3d4-4494-b866-a9a25aea5e2a
-
+md"⚠️ Check [the decoded content](https://github.com/nov05/Stanford-AA228VProjects/blob/main/misc/03_project2_decode_output.jl) ([How to decode](https://github.com/nov05/Stanford-AA228VProjects/blob/main/misc/03_decode.jl))"
 
 # ╔═╡ 20cb2d9b-ad2d-4d06-be09-03bd5396687a
 begin
@@ -1405,6 +1407,13 @@ rerun(sys_small, ψ_small;
 	  project=ThisProject,
 	  latextras=ψ2latex(sys_small, ψ_small))[3]
 
+# ╔═╡ e473f870-3821-4247-9f21-acbb9e2255a9
+## Nov05: code explanation
+begin
+	println(mean(baseline_small))
+	println(baseline_small)
+end
+
 # ╔═╡ c7c8277a-3846-41df-aba2-40c2a7bf5806
 baseline_small_different = run_aggregate_baseline(sys_small, ψ_small_different);
 
@@ -1416,6 +1425,13 @@ begin
 		  project=ThisProject,
 		  latextras=ψ2latex(sys_small, ψ_small_different),
 		  save=false)[3]
+end
+
+# ╔═╡ 4f52a0cd-e1e0-454b-9802-b74439ddb1e8
+## Nov05: code explanation
+begin
+	println(mean(baseline_small_different))
+	println(baseline_small_different)
 end
 
 # ╔═╡ 052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
@@ -3807,11 +3823,13 @@ version = "1.8.1+0"
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
-# ╟─b21a8170-fb12-4230-8a00-c11b9b2cf95a
+# ╠═b21a8170-fb12-4230-8a00-c11b9b2cf95a
 # ╠═beaec161-ad89-4f83-9066-f420a1d04d39
+# ╠═e473f870-3821-4247-9f21-acbb9e2255a9
 # ╟─b21ab60c-df7b-4847-8325-8e9850dfb92d
 # ╟─535261e3-4cb3-4b0b-954d-7452b2a91b5d
 # ╠═c524297f-2bf3-4dd2-b7b4-fc5ce9a81738
+# ╠═4f52a0cd-e1e0-454b-9802-b74439ddb1e8
 # ╟─c7c8277a-3846-41df-aba2-40c2a7bf5806
 # ╟─052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
 # ╟─02a4098f-a1ee-433c-aea7-8e8fc8a65088
@@ -3892,7 +3910,7 @@ version = "1.8.1+0"
 # ╟─4edc5933-9457-4c7c-8456-a26974e0587e
 # ╟─95e3d42f-b33f-4294-81c5-f34a300dc9b4
 # ╠═ba6c082b-6e62-42fc-a85c-c8b7efc89b88
-# ╠═d27a5e1b-b3d4-4494-b866-a9a25aea5e2a
+# ╟─d27a5e1b-b3d4-4494-b866-a9a25aea5e2a
 # ╟─02fac8f9-b442-40d7-b3f3-415a10570e8e
 # ╟─173388ab-207a-42a6-b364-b2c1cb335f6b
 # ╟─20cb2d9b-ad2d-4d06-be09-03bd5396687a

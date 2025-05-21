@@ -195,7 +195,8 @@ function check_max_steps(sys::System, ψ, 𝐏, counts::Vector;
 
     try
         if include_plot
-            plt = plot_pfail_histogram(sys, ψ, 𝐏; f_truth=get_true_pfail, baseline=baseline_error)
+            # plt = plot_pfail_histogram(sys, ψ, 𝐏; f_truth=get_true_pfail, baseline=baseline_error)  ## changed by nov05
+            plt = plot_pfail_histogram(sys, ψ, 𝐏; f_truth=get_true_pfail, baseline=mean(baseline))    ## changed by nov05
             if sys isa SmallSystem
                 plt = let
                     plt = plot!(title="Estimates", leftmargin=8Plots.mm)
