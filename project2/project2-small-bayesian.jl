@@ -504,9 +504,9 @@ _The **graded** tests to be submitted to Gradescope are located [below](#graded-
 """
 
 # ╔═╡ b21a8170-fb12-4230-8a00-c11b9b2cf95a
-md"⚠️ Nov05: I believe the green vertical line indicating the baseline value in the plot on the right is incorrect—it appears to be showing the **Baseline Error** rather than the **Baseline**. Since `ThisProject.rerun()` is loaded from the encoded `.project2` file, you can't verify or modify this behavior without decoding it, which would be a violation of the honor code. You can only view the implementation in `backend.jl`, located at `.julia/packages/StanfordAA228V/h5BcH/src/notebook/backend.jl`, to confirm that it's encoded.  
+md"> ⚠️ Nov05: I believe the green vertical line indicating the baseline value in the plot on the right is incorrect—it appears to be showing the **Baseline Error** rather than the **Baseline**. Since `ThisProject.rerun()` is loaded from the encoded `.project2` file, you can't verify or modify this behavior without decoding it, which would be a violation of the honor code. You can only view the implementation in `backend.jl`, located at `.julia/packages/StanfordAA228V/h5BcH/src/notebook/backend.jl`, to confirm that it's encoded.  
 
-✅ "
+> ✅ However, if you're taking this course for fun and aren't bound by the honor code, you can replace the `Users\***\.julia\packages\StanfordAA228V\h5BcH\src\notebook\.project2` file on your local system with [this one](https://github.com/nov05/Stanford-AA228VProjects/blob/main/misc/.project2)."
 
 # ╔═╡ 535261e3-4cb3-4b0b-954d-7452b2a91b5d
 begin
@@ -3823,7 +3823,7 @@ version = "1.8.1+0"
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
-# ╠═b21a8170-fb12-4230-8a00-c11b9b2cf95a
+# ╟─b21a8170-fb12-4230-8a00-c11b9b2cf95a
 # ╠═beaec161-ad89-4f83-9066-f420a1d04d39
 # ╠═e473f870-3821-4247-9f21-acbb9e2255a9
 # ╟─b21ab60c-df7b-4847-8325-8e9850dfb92d

@@ -168,7 +168,7 @@ You can use Unicode—and even emojis 🙃—as variable and function names. Her
 
 | Unicode | Code |
 |:-------:|:----:|
-| `τ` | `\tau` |
+| `τ` | `\tab` |
 | `ψ` | `\psi` |
 | `ℓ` | `\ell` |
 | `π` | `\pi` |
@@ -487,6 +487,9 @@ Please fill in the following `estimate_probability` function.
 # ╔═╡ a003beb6-6235-455c-943a-e381acd00c0e
 start_code()
 
+# ╔═╡ de7a8c16-3048-4952-9185-b2048986c293
+md"✅ Check [my **Bayesian estimation** solution notebook in HTML](https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/project2-small-bayesian.html)." 
+
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
 
@@ -500,23 +503,14 @@ begin
 	local d = get_depth(sys_small)
 	local p = NominalTrajectoryDistribution(sys_small, d)
 	local τs = [rollout(sys_small, p; d) for _ in 1:200]
-	println(isfailure.(ψ_small, τs))
+	println("There were $(sum(isfailure.(ψ_small, τs))) failures out of 200 rollouts.")
 	println(τs[1][d].s)
-	println(robustness([τ[d].s for τ in τs], ψ_small.formula, w=1.0))
+	println("robustness = ", robustness([τ[d].s for τ in τs], ψ_small.formula, w=1.0))
+	# println("p = ", p)
 end
 
-# ╔═╡ e3c6d882-afc6-46bd-a6aa-693ff966785f
-## Nov05: code explanation
-begin
-	local d = get_depth(sys_small)
-	local p = Normal(0, 1)
-	local pτ = NominalTrajectoryDistribution(p, d)
-	local τs = [rollout(sys_small, pτ; d) for _ in 1:200]
-	print(τs[1])
-	println(isfailure.(ψ_small, τs))
-	println(τs[1][d].s)
-	println(robustness([τ[d].s for τ in τs], ψ_small.formula, w=1.0))
-end
+# ╔═╡ 2efdbafa-7f12-43a5-b266-bd30888fc1d3
+
 
 # ╔═╡ e8aea014-ca38-4cab-86c6-a445e6842bc2
 ## Nov05: code explanation
@@ -960,7 +954,7 @@ begin
 	        ps = [pdf(p, τ) for τ in τs]
 	        qs = [pdf(q, τ) for τ in τs]
 	        ws = ps ./ qs
-	        ws[Y .> y] .= 0
+	        ws[Y .> y] .= 0  ## set non-elite weights to zero
 	        q = fit(typeof(q), τs, ws=ws)
 	    end
 	    return estimate(ImportanceSamplingEstimation(p, q, m), sys, ψ)
@@ -983,6 +977,8 @@ begin
 	function StanfordAA228V.initial_state_distribution(p::SmallProposalDistribution)
 		return Normal(p.μ, p.σ)
 	end
+
+	StanfordAA228V.depth(p::SmallProposalDistribution) = get_depth(sys_small)
 	
 	function Distributions.fit(::Type{SmallProposalDistribution}, samples::Vector; ws::Vector)
 	    # extract initial states from the rollouts
@@ -998,12 +994,21 @@ begin
 		ps = Ps(sys.env)
 		p = NominalTrajectoryDistribution(sys, d)
 		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
-		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
-		m = 10
-		k_max = n / m
+		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=0.5)
+		m = 20
+		k_max = n / m - 1
 		m_elite = 2
 		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
 	end
+end
+
+# ╔═╡ 466c6a8b-a3cf-42fe-998f-660d514798d6
+## Nov05: code explanation. Distributions.jl
+begin
+	println(fit(Normal, [1.0, 2.0, 3.0]))
+	local samples = [randn(3) for _ in 1:100]
+	## fits a multivariate Normal
+	println(fit(MvNormal, hcat(samples...)))  ## 3×100 matrix
 end
 
 # ╔═╡ 307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
@@ -3908,11 +3913,13 @@ version = "1.8.1+0"
 # ╟─92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 # ╟─a003beb6-6235-455c-943a-e381acd00c0e
 # ╟─d0a25025-9309-463f-a09a-9d7ea3df8143
+# ╟─de7a8c16-3048-4952-9185-b2048986c293
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
 # ╠═1bce2d86-cb46-4c44-ab62-b440115bf967
-# ╠═e3c6d882-afc6-46bd-a6aa-693ff966785f
+# ╠═2efdbafa-7f12-43a5-b266-bd30888fc1d3
 # ╠═e8aea014-ca38-4cab-86c6-a445e6842bc2
+# ╠═466c6a8b-a3cf-42fe-998f-660d514798d6
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
 # ╟─beaec161-ad89-4f83-9066-f420a1d04d39

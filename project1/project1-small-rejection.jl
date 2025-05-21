@@ -162,7 +162,7 @@ You can use Unicode—and even emojis 🙃—as variable and function names. Her
 
 | Unicode | Code |
 |:-------:|:----:|
-| `τ` | `\tab` |
+| `τ` | `\tau` |
 | `ψ` | `\psi` |
 | `ℓ` | `\ell` |
 | `π` | `\pi` |
