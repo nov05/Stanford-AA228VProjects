@@ -490,59 +490,6 @@ start_code()
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
 
-# ╔═╡ 1bce2d86-cb46-4c44-ab62-b440115bf967
-## Nov05: code explanation
-begin
-	println(Ps(sys_small.env)) 
-	println(robustness(-1.9, ψ_small.formula, w=1.0))
-	println(robustness(-2.0, ψ_small.formula, w=1.0))
-	println(robustness(-2.1, ψ_small.formula, w=1.0))
-	local d = get_depth(sys_small)
-	local p = NominalTrajectoryDistribution(sys_small, d)
-	local τs = [rollout(sys_small, p; d) for _ in 1:200]
-	println(isfailure.(ψ_small, τs))
-	println(τs[1][d].s)
-	println(robustness([τ[d].s for τ in τs], ψ_small.formula, w=1.0))
-end
-
-# ╔═╡ e3c6d882-afc6-46bd-a6aa-693ff966785f
-## Nov05: code explanation
-begin
-	local d = get_depth(sys_small)
-	local p = Normal(0, 1)
-	local pτ = NominalTrajectoryDistribution(p, d)
-	local τs = [rollout(sys_small, pτ; d) for _ in 1:200]
-	print(τs[1])
-	println(isfailure.(ψ_small, τs))
-	println(τs[1][d].s)
-	println(robustness([τ[d].s for τ in τs], ψ_small.formula, w=1.0))
-end
-
-# ╔═╡ e8aea014-ca38-4cab-86c6-a445e6842bc2
-## Nov05: code explanation
-begin
-	struct TestProposalDistribution <: TrajectoryDistribution
-		# Σₒ ## sensor disturbance covariance
-		μ
-		σ
-	end
-	## Function disturbance_distribution() for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::TestProposalDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	function StanfordAA228V.initial_state_distribution(p::TestProposalDistribution)
-		return Normal(p.μ, p.σ)
-	end
-	## increase variance
-	local q = TestProposalDistribution(ps_small.μ, 2000 * ps_small.σ)  
-	local τs = [rollout(sys_small, q; d=1) for _ in 1:10]
-	println(τs[1][1].s)
-end
-
 # ╔═╡ e2418154-4471-406f-b900-97905f5d2f59
 html_quarter_space()
 
@@ -555,6 +502,9 @@ We'll automatically test your `estimate_probability(::SmallSystem, ψ)` function
 
 _The **graded** tests to be submitted to Gradescope are located [below](#graded-test)._
 """
+
+# ╔═╡ b21a8170-fb12-4230-8a00-c11b9b2cf95a
+md"⚠️ Nov05: I believe the green vertical line indicating the baseline value in the plot on the right is incorrect—it appears to be showing the **Baseline Error** rather than the **Baseline**. Since `ThisProject.ψ2latex()` is loaded from the encoded `.project2` file, you can't verify or modify this behavior. You can only view the implementation in `backend.jl`, located at `.julia/packages/StanfordAA228V/h5BcH/src/notebook/backend.jl`, to confirm that it's encoded."
 
 # ╔═╡ 535261e3-4cb3-4b0b-954d-7452b2a91b5d
 begin
@@ -922,87 +872,29 @@ begin
 end
 
 # ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
-## Cross entropy estimation
 begin
-	struct ImportanceSamplingEstimation
-	    p  # nominal distribution
-	    q  # proposal distribution
-	    m  # number of samples
+	struct BayesianEstimation
+	    prior::Beta  # from Distributions.jl
+	    d            # depth
+	    m            # number of samples
 	end
 	
-	function estimate(alg::ImportanceSamplingEstimation, sys, ψ)
-	    p, q, m = alg.p, alg.q, alg.m
-	    τs = [rollout(sys, q) for i in 1:m]
-	    ps = [pdf(p, τ) for τ in τs]
-	    qs = [pdf(q, τ) for τ in τs]
-	    ws = ps ./ qs
-	    return mean(w * isfailure(ψ, τ) for (w, τ) in zip(ws, τs))
+	function estimate(alg::BayesianEstimation, sys, ψ)
+	    prior, d, m = alg.prior, alg.d, alg.m
+	    τs = [rollout(sys, d=d) for i in 1:m]
+	    n, m = sum(isfailure(ψ, τ) for τ in τs), length(τs)
+	    return Beta(prior.α + n, prior.β + m - n)
 	end
 
-	struct CrossEntropyEstimation
-	    p        # nominal trajectory distribution
-	    q₀       # initial proposal distribution
-	    f        # objective function f(τ, ψ)
-	    k_max    # number of iterations
-	    m        # number of samples per iteration
-	    m_elite  # number of elite samples
-	end
-	
-	function estimate(alg::CrossEntropyEstimation, sys::SmallSystem, ψ)
-	    k_max, m, m_elite = alg.k_max, alg.m, alg.m_elite
-	    p, q, f = alg.p, alg.q₀, alg.f
-		d = get_depth(sys)
-	    for k in 1:k_max
-	        τs = [rollout(sys, q; d) for _ in 1:m]
-	        Y = [f(τ, ψ) for τ in τs]
-	        order = sortperm(Y)
-	        y = max(0, Y[order[m_elite]])
-	        ps = [pdf(p, τ) for τ in τs]
-	        qs = [pdf(q, τ) for τ in τs]
-	        ws = ps ./ qs
-	        ws[Y .> y] .= 0
-	        q = fit(typeof(q), τs, ws=ws)
-	    end
-	    return estimate(ImportanceSamplingEstimation(p, q, m), sys, ψ)
-	end
-
-	struct SmallProposalDistribution <: TrajectoryDistribution
-		μ
-		σ
-	end
-	
-	## Function disturbance_distribution() for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::SmallProposalDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	
-	function StanfordAA228V.initial_state_distribution(p::SmallProposalDistribution)
-		return Normal(p.μ, p.σ)
-	end
-	
-	function Distributions.fit(::Type{SmallProposalDistribution}, samples::Vector; ws::Vector)
-	    # extract initial states from the rollouts
-	    xs = [τ[1].s for τ in samples] 
-	    # fit Normal(μ, σ) from the initial state samples
-	    fitted = fit(Normal, xs, ws)
-	    return SmallProposalDistribution(mean(fitted), std(fitted))
-	end
-	
 	@small function estimate_probability(sys::SmallSystem, ψ; n=max_steps(sys))
 		# TODO: WRITE YOUR CODE HERE
 		d = get_depth(sys)
-		ps = Ps(sys.env)
-		p = NominalTrajectoryDistribution(sys, d)
-		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
-		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
-		m = 10
-		k_max = n / m
-		m_elite = 2
-		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
+		m = n / d
+		## requires domain knowledge. tried (1, 1), (0.5, 0.5), (0.4, 0.4), ...
+		## these will work: 0.1, 0.05, 0.15, 0.2, 0.09
+		prior = Beta(0.1, 0.1)
+		posterior = estimate(BayesianEstimation(prior, d, 200), sys, ψ)
+		return (mean(posterior))
 	end
 end
 
@@ -1209,6 +1101,9 @@ _This was run on an Ubuntu server with about `530 GB` of RAM over `127` cores._
 
 # ╔═╡ 4edc5933-9457-4c7c-8456-a26974e0587e
 html_half_space()
+
+# ╔═╡ d27a5e1b-b3d4-4494-b866-a9a25aea5e2a
+
 
 # ╔═╡ 20cb2d9b-ad2d-4d06-be09-03bd5396687a
 begin
@@ -3910,15 +3805,13 @@ version = "1.8.1+0"
 # ╟─d0a25025-9309-463f-a09a-9d7ea3df8143
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
-# ╠═1bce2d86-cb46-4c44-ab62-b440115bf967
-# ╠═e3c6d882-afc6-46bd-a6aa-693ff966785f
-# ╠═e8aea014-ca38-4cab-86c6-a445e6842bc2
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
-# ╟─beaec161-ad89-4f83-9066-f420a1d04d39
+# ╟─b21a8170-fb12-4230-8a00-c11b9b2cf95a
+# ╠═beaec161-ad89-4f83-9066-f420a1d04d39
 # ╟─b21ab60c-df7b-4847-8325-8e9850dfb92d
 # ╟─535261e3-4cb3-4b0b-954d-7452b2a91b5d
-# ╟─c524297f-2bf3-4dd2-b7b4-fc5ce9a81738
+# ╠═c524297f-2bf3-4dd2-b7b4-fc5ce9a81738
 # ╟─c7c8277a-3846-41df-aba2-40c2a7bf5806
 # ╟─052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
 # ╟─02a4098f-a1ee-433c-aea7-8e8fc8a65088
@@ -3998,7 +3891,8 @@ version = "1.8.1+0"
 # ╟─16220c31-ce7d-4cd4-b66a-72527a7623b9
 # ╟─4edc5933-9457-4c7c-8456-a26974e0587e
 # ╟─95e3d42f-b33f-4294-81c5-f34a300dc9b4
-# ╟─ba6c082b-6e62-42fc-a85c-c8b7efc89b88
+# ╠═ba6c082b-6e62-42fc-a85c-c8b7efc89b88
+# ╠═d27a5e1b-b3d4-4494-b866-a9a25aea5e2a
 # ╟─02fac8f9-b442-40d7-b3f3-415a10570e8e
 # ╟─173388ab-207a-42a6-b364-b2c1cb335f6b
 # ╟─20cb2d9b-ad2d-4d06-be09-03bd5396687a
@@ -4010,6 +3904,6 @@ version = "1.8.1+0"
 # ╟─6c8b3077-876e-42fd-aa47-f3fa7c37f4dd
 # ╟─97042a5e-9691-493f-802e-2262f2da4627
 # ╟─9865ed62-b4fd-4e49-9259-3e5997c589f3
-# ╠═ef084fea-bf4d-48d9-9c84-8cc1dd98f2d7
+# ╟─ef084fea-bf4d-48d9-9c84-8cc1dd98f2d7
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
