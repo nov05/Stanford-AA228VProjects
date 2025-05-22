@@ -509,9 +509,6 @@ begin
 	# println("p = ", p)
 end
 
-# ╔═╡ 2efdbafa-7f12-43a5-b266-bd30888fc1d3
-
-
 # ╔═╡ e8aea014-ca38-4cab-86c6-a445e6842bc2
 ## Nov05: code explanation
 begin
@@ -946,7 +943,7 @@ begin
 	    k_max, m, m_elite = alg.k_max, alg.m, alg.m_elite
 	    p, q, f = alg.p, alg.q₀, alg.f
 		d = get_depth(sys)
-	    for k in 1:k_max
+	    for _ in 1:k_max
 	        τs = [rollout(sys, q; d) for _ in 1:m]
 	        Y = [f(τ, ψ) for τ in τs]
 	        order = sortperm(Y)
@@ -957,7 +954,8 @@ begin
 	        ws[Y .> y] .= 0  ## set non-elite weights to zero
 	        q = fit(typeof(q), τs, ws=ws)
 	    end
-	    return estimate(ImportanceSamplingEstimation(p, q, m), sys, ψ)
+		println(" ")
+	    return estimate(ImportanceSamplingEstimation(p, q, 20), sys, ψ)
 	end
 
 	struct SmallProposalDistribution <: TrajectoryDistribution
@@ -981,11 +979,10 @@ begin
 	StanfordAA228V.depth(p::SmallProposalDistribution) = get_depth(sys_small)
 	
 	function Distributions.fit(::Type{SmallProposalDistribution}, samples::Vector; ws::Vector)
-	    # extract initial states from the rollouts
 	    xs = [τ[1].s for τ in samples] 
-	    # fit Normal(μ, σ) from the initial state samples
-	    fitted = fit(Normal, xs, ws)
-	    return SmallProposalDistribution(mean(fitted), std(fitted))
+	    p = fit(Normal, xs, ws)
+		println("μ = $(p.μ), σ = $(p.σ)")
+	    return SmallProposalDistribution(p.μ, p.σ)
 	end
 	
 	@small function estimate_probability(sys::SmallSystem, ψ; n=max_steps(sys))
@@ -994,10 +991,10 @@ begin
 		ps = Ps(sys.env)
 		p = NominalTrajectoryDistribution(sys, d)
 		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
-		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=0.5)
-		m = 20
-		k_max = n / m - 1
-		m_elite = 2
+		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
+		m = 60
+		k_max = div(n-20, m)
+		m_elite = 5
 		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
 	end
 end
@@ -3917,7 +3914,6 @@ version = "1.8.1+0"
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
 # ╠═1bce2d86-cb46-4c44-ab62-b440115bf967
-# ╠═2efdbafa-7f12-43a5-b266-bd30888fc1d3
 # ╠═e8aea014-ca38-4cab-86c6-a445e6842bc2
 # ╠═466c6a8b-a3cf-42fe-998f-660d514798d6
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
