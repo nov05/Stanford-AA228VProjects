@@ -477,11 +477,48 @@ md"""
 The following function is a baseline random falsification algorithm that returns the trajectory that led to the most-likely failure.
 """
 
+# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
+@tracked function most_likely_failure_baseline(sys, ψ; n=max_steps(sys), full=false)
+	d = get_depth(sys)
+	m = n ÷ d                                          # Get num rollouts, \div for ÷
+	pτ = NominalTrajectoryDistribution(sys, d)         # Trajectory distribution
+	τs = [rollout(sys, pτ; d) for _ in 1:m]            # Rollout with pτ, m*d steps
+	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs.
+	τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) # Most-likely failure traj
+	return full ? (τ_most_likely, τs) : τ_most_likely     # Return MLF, or all trajs.
+end
+
 # ╔═╡ bb3b33e6-fd05-4631-b0bd-c71ef3dbee38
 n_baseline_small = 100
 
+# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
+function run_baseline(sys::System, ψ; n, seed=4)
+	Random.seed!(seed)
+	τ, τs = most_likely_failure_baseline(sys, ψ; n, full=true)
+	d = get_depth(sys)
+	p = NominalTrajectoryDistribution(sys, d)
+	ℓ = logpdf(p, τ)
+	n = stepcount()
+	return (τ=τ, τs=τs, ℓ=ℓ, n=n) # return these variables as a NamedTuple
+end
+
 # ╔═╡ cc11217f-e070-4d20-8ebe-18e7eb977487
 highlight(md"""**Note**: You can access the number of `step` calls via `stepcount()`""")
+
+# ╔═╡ 3385fcb3-8b93-4da8-ba75-77877cc77ce4
+baseline_small_results = run_baseline(sys_small, ψ_small; n=n_baseline_small);
+
+# ╔═╡ 73da2a56-8991-4484-bcde-7d397214e552
+Markdown.parse("""
+### Baseline results (small)
+
+\$\$\\begin{align}
+\\ell_\\text{baseline} &= $(round(baseline_small_results.ℓ, digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} &= $(baseline_small_results.n) \\tag{number of \\texttt{step} calls}
+\\end{align}\$\$
+
+Reminder that the number of `step` calls \$n\$ is equal to the number of rollouts \$m\$ for the small system. This is because the rollout depth is \$d=1\$.
+""")
 
 # ╔═╡ a6603deb-57fa-403e-a2e5-1195ae7c016c
 md"""
@@ -504,6 +541,58 @@ start_code()
 
 # ╔═╡ 5b0e52ff-2167-4e7e-b4c0-5b6b9e4ce583
 md"**Nov05: 👉 Check [this notebook](https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/project1-small-rejection.html) for the \"rejection sampling\" solution.**"
+
+# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
+## fuzzing
+begin
+	struct FuzzingDistribution <: TrajectoryDistribution
+		# Σₒ ## sensor disturbance covariance
+		μ
+		σ
+	end
+	## the disturbance_distribution for the SmallSystem does not apply
+	function StanfordAA228V.disturbance_distribution(
+		p::FuzzingDistribution, t)
+		D = DisturbanceDistribution((o) -> Deterministic(),
+									(s,a) -> Deterministic(),
+									(s) -> Deterministic()) 
+		return D
+	end
+	function StanfordAA228V.initial_state_distribution(p::FuzzingDistribution)
+		return Normal(p.μ, p.σ)
+	end
+	StanfordAA228V.depth(p::FuzzingDistribution) = get_depth(sys_small)
+	@small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys), full=false)
+		# TODO: WRITE YOUR CODE HERE
+		d = get_depth(sys)
+		m = n ÷ d  ## Get num of rollouts 
+		ps_small = Ps(sys.env)
+		## increase the variance
+		q = FuzzingDistribution(ps_small.μ, 2 * ps_small.σ)  
+		τs = [rollout(sys_small, q; d=d) for _ in 1:m]
+		## Filter to get failure trajactories, type Vector{Any}
+		τs_failures = filter(τ->isfailure(ψ, τ), τs)  
+		num_failures = length(τs_failures)
+		## Most-likely failure trajactory
+		# τ_most_likely = argmax(τ->logpdf(ps_small, τ[d].s), τs_failures) 
+		pτ = NominalTrajectoryDistribution(sys, d)
+		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
+		println("👉 Nov05: Got $num_failures failures out of $m rollouts.")
+		## τs has to be Vector{Any}[[]]
+		return full ? (τ_most_likely, τs) : τ_most_likely
+	end
+end
+
+# ╔═╡ 6988c0be-077f-4eb3-93db-1e24dbec75a4
+## Nov05: code explanation 
+## Find definition in ".julia\packages\StanfordAA228V\h5BcH\src\system.jl"
+begin 
+	local pτ = NominalTrajectoryDistribution(sys_small, 1)
+	println(initial_state_distribution(pτ))
+	local τs = [rollout(sys_small, pτ; d=1) for _ in 1:20]
+	println(τs[1])
+	println(τs[2])
+end
 
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
@@ -599,6 +688,17 @@ Example rollouts of the pendulum system and their plot below.
 
 # ╔═╡ f005da72-d7b5-4f01-8882-ed4e2bdcf4bd
 n_baseline_medium = 41_000
+
+# ╔═╡ 77a6e704-33e8-4241-84f0-0e58c29c06ef
+baseline_medium_results = run_baseline(sys_medium, ψ_medium; n=n_baseline_medium);
+
+# ╔═╡ 7ef66a50-6acc-474f-b406-7b27a7b18510
+Markdown.parse("""
+\$\$\\begin{align}
+\\ell_\\text{baseline} &= $(round(baseline_medium_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} &= $(format(baseline_medium_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
+\\end{align}\$\$
+""")
 
 # ╔═╡ d75f34d3-384c-486b-b648-61ef8fd52167
 Markdown.parse("""
@@ -735,108 +835,8 @@ alg = DirectFalsification(1, $(max_steps(sys_small)))
 **Note**: _But we want to use the `NominalTrajectoryDistribution` to keep the algorithm general for the medium/large problems that **do** have disturbances._
 """)])
 
-# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
-@tracked function most_likely_failure_baseline(sys, ψ; n=max_steps(sys), full=false)
-	d = get_depth(sys)
-	m = n ÷ d                                          # Get num rollouts, \div for ÷
-	pτ = NominalTrajectoryDistribution(sys, d)         # Trajectory distribution
-	τs = [rollout(sys, pτ; d) for _ in 1:m]            # Rollout with pτ, m*d steps
-	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs.
-	τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) # Most-likely failure traj
-	return full ? (τ_most_likely, τs) : τ_most_likely     # Return MLF, or all trajs.
-end
-
-# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
-function run_baseline(sys::System, ψ; n, seed=4)
-	Random.seed!(seed)
-	τ, τs = most_likely_failure_baseline(sys, ψ; n, full=true)
-	d = get_depth(sys)
-	p = NominalTrajectoryDistribution(sys, d)
-	ℓ = logpdf(p, τ)
-	n = stepcount()
-	return (τ=τ, τs=τs, ℓ=ℓ, n=n) # return these variables as a NamedTuple
-end
-
-# ╔═╡ 3385fcb3-8b93-4da8-ba75-77877cc77ce4
-baseline_small_results = run_baseline(sys_small, ψ_small; n=n_baseline_small);
-
-# ╔═╡ 73da2a56-8991-4484-bcde-7d397214e552
-Markdown.parse("""
-### Baseline results (small)
-
-\$\$\\begin{align}
-\\ell_\\text{baseline} &= $(round(baseline_small_results.ℓ, digits=3))\\tag{failure log-likelihood} \\\\
-n_\\text{steps} &= $(baseline_small_results.n) \\tag{number of \\texttt{step} calls}
-\\end{align}\$\$
-
-Reminder that the number of `step` calls \$n\$ is equal to the number of rollouts \$m\$ for the small system. This is because the rollout depth is \$d=1\$.
-""")
-
-# ╔═╡ 77a6e704-33e8-4241-84f0-0e58c29c06ef
-baseline_medium_results = run_baseline(sys_medium, ψ_medium; n=n_baseline_medium);
-
-# ╔═╡ 7ef66a50-6acc-474f-b406-7b27a7b18510
-Markdown.parse("""
-\$\$\\begin{align}
-\\ell_\\text{baseline} &= $(round(baseline_medium_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
-n_\\text{steps} &= $(format(baseline_medium_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
-\\end{align}\$\$
-""")
-
 # ╔═╡ 42456abf-4930-4b01-afd1-fce3b4881e28
 baseline_details(sys_small; n_baseline=n_baseline_small, descr="simple Gaussian", max_steps)
-
-# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
-## fuzzing
-begin
-	struct FuzzingDistribution <: TrajectoryDistribution
-		# Σₒ ## sensor disturbance covariance
-		μ
-		σ
-	end
-	## the disturbance_distribution for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::FuzzingDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	function StanfordAA228V.initial_state_distribution(p::FuzzingDistribution)
-		return Normal(p.μ, p.σ)
-	end
-	StanfordAA228V.depth(p::FuzzingDistribution) = get_depth(sys_small)
-	@small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys), full=false)
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		m = n ÷ d  ## Get num of rollouts 
-		ps_small = Ps(sys.env)
-		## increase the variance
-		q = FuzzingDistribution(ps_small.μ, 2 * ps_small.σ)  
-		τs = [rollout(sys_small, q; d=d) for _ in 1:m]
-		## Filter to get failure trajactories, type Vector{Any}
-		τs_failures = filter(τ->isfailure(ψ, τ), τs)  
-		num_failures = length(τs_failures)
-		## Most-likely failure trajactory
-		# τ_most_likely = argmax(τ->logpdf(ps_small, τ[d].s), τs_failures) 
-		pτ = NominalTrajectoryDistribution(sys, d)
-		τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) 
-		println("👉 Nov05: Got $num_failures failures out of $m rollouts.")
-		## τs has to be Vector{Any}[[]]
-		return full ? (τ_most_likely, τs) : τ_most_likely
-	end
-end
-
-# ╔═╡ 6988c0be-077f-4eb3-93db-1e24dbec75a4
-## Nov05: code explanation 
-## Find definition in ".julia\packages\StanfordAA228V\h5BcH\src\system.jl"
-begin 
-	local pτ = NominalTrajectoryDistribution(sys_small, 1)
-	println(initial_state_distribution(pτ))
-	local τs = [rollout(sys_small, pτ; d=1) for _ in 1:20]
-	println(τs[1])
-	println(τs[2])
-end
 
 # ╔═╡ 307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
 Markdown.MD(
@@ -4049,7 +4049,7 @@ version = "1.8.1+0"
 
 # ╔═╡ Cell order:
 # ╟─7f145d8a-2b32-4f4c-9c4c-20bacd0cfb7b
-# ╟─e989893c-04da-4c8c-9a57-e2f7f376caaa
+# ╠═e989893c-04da-4c8c-9a57-e2f7f376caaa
 # ╟─6b17139e-6caf-4f07-a607-e403bf1ad794
 # ╠═14964632-98d8-4a2f-b2f6-e3f28b558803
 # ╟─117d0059-ce1a-497e-8667-a0c2ef20c632

@@ -53,6 +53,17 @@ md"* Pluto notebook worked on by Nov05 on 2025-05-17
 * Check [the textbook notes](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.qfey2q7ioy3x), e.g. Ctrl+F to search for \"fuzzing\"
 "
 
+# ╔═╡ e7509db7-bc59-4541-a145-cec0fa1b7c7a
+md"**Summary of the notebook:**  
+
+| System                             | Algorithm                                 |
+|:----------------------------------|:------------------------------------------|
+| Small system (1D Gaussian)         | Adaptive importance sampling (Cross entropy method), Bayesian Estimation |
+| Medium system (Inverted Pendulum)  | - |
+| Large system (Aircraft Collision Avoidance) | - |
+
+"
+
 # ╔═╡ 117d0059-ce1a-497e-8667-a0c2ef20c632
 md"""
 # Project 2: Estimating failure probability
@@ -531,7 +542,8 @@ begin
 	## increase variance
 	local q = TestProposalDistribution(ps_small.μ, 2000 * ps_small.σ)  
 	local τs = [rollout(sys_small, q; d=1) for _ in 1:10]
-	println(τs[1][1].s)
+	println("τ = $(τs[1])")
+	println("state = $(τs[1][1].s)")
 end
 
 # ╔═╡ e2418154-4471-406f-b900-97905f5d2f59
@@ -692,6 +704,21 @@ start_code()
 
 # ╔═╡ 759534ca-b40b-4824-b7ec-3a5c06cbd23e
 end_code()
+
+# ╔═╡ 1ddf486f-6eb5-4962-a158-e43feaab055b
+## Nov05: code explannation
+println(Ps(sys_medium.env))
+
+# ╔═╡ 557f79f0-a4e3-4de9-b2e4-24f3fc307f3b
+md"ChatGPT: **`FullNormal`** is not a standard type in **`Distributions.jl`**, but it is used in **`POMDPs.jl`** ecosystem (partially observable Markov decision process), specifically in **`POMDPModelTools.jl`**. It is a custom wrapper for a multivariate Gaussian, defined roughly as:
+
+```julia  
+struct FullNormal{T<:Real} <: AbstractMvNormal  
+    μ::Vector{T}  
+    Σ::Matrix{T}  
+end
+```  
+"
 
 # ╔═╡ 7987c20d-68e8-441b-bddc-3f0ae7c3591d
 html_quarter_space()
@@ -955,7 +982,7 @@ begin
 	        q = fit(typeof(q), τs, ws=ws)
 	    end
 		println(" ")
-	    return estimate(ImportanceSamplingEstimation(p, q, 20), sys, ψ)
+	    return estimate(ImportanceSamplingEstimation(p, q, m_IS), sys, ψ)
 	end
 
 	struct SmallProposalDistribution <: TrajectoryDistribution
@@ -984,7 +1011,8 @@ begin
 		println("μ = $(p.μ), σ = $(p.σ)")
 	    return SmallProposalDistribution(p.μ, p.σ)
 	end
-	
+
+	m, m_elite, m_IS = 61, 5, 17  ## mean err = 0.005018
 	@small function estimate_probability(sys::SmallSystem, ψ; n=max_steps(sys))
 		# TODO: WRITE YOUR CODE HERE
 		d = get_depth(sys)
@@ -992,9 +1020,7 @@ begin
 		p = NominalTrajectoryDistribution(sys, d)
 		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
 		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
-		m = 60
-		k_max = div(n-20, m)
-		m_elite = 5
+		k_max = div(n-m_IS, m)
 		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
 	end
 end
@@ -1030,8 +1056,112 @@ _We will report the mean and standard deviation of your estimates._
 """)
 
 # ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
-@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
-	# TODO: WRITE YOUR CODE HERE
+## Sequencial Monte Carlo estimation (particle filtering)
+begin
+	## Metropolis-Hastings algorithm (MCMC)
+	struct MCMCSampling
+	    p̄       # target density
+	    g       # kernel: τ′ = rollout(sys, g(τ))
+	    τ       # initial trajectory
+	    k_max   # max iterations
+	    m_burnin    # number of samples to discard from burn-in
+	    m_skip      # number of samples to skip for thinning
+	end
+	
+	function sample_failures(alg::MCMCSampling, sys, ψ)
+	    p̄, g, τ = alg.p̄, alg.g, alg.τ
+	    k_max, m_burnin, m_skip = alg.k_max, alg.m_burnin, alg.m_skip
+	    τs = []
+	    for k in 1:k_max
+	        τ′ = rollout(sys, g(τ))
+	        if rand() < (p̄(τ′) * pdf(g(τ′), τ)) / (p̄(τ) * pdf(g(τ), τ′))
+	            τ = τ′
+	        end
+	        push!(τs, τ)
+	    end
+	    return τs[m_burnin:m_skip:end]
+	end
+
+	## Pendulum trajectory distribution
+	struct PendulumTrajectoryDistribution <: TrajectoryDistribution
+		μ₁  ## mean of initial state distribution
+		Σ₁  ## covariance of initial state distribution
+		μs  ## vector of sensor disturbance means, length d
+		Σs  ## vector of sensor disturbance covariance, length d
+	end
+	
+	function StanfordAA228V.initial_state_distribution(
+		p::PendulumTrajectoryDistribution)
+	    return MvNormal(p.μ₁, p.Σ₁)
+	end
+	
+	function StanfordAA228V.disturbance_distribution(
+		p::PendulumTrajectoryDistribution, t)
+	    D = DisturbanceDistribution((o)   -> Deterministic(),
+	                                (s,a) -> Deterministic(),
+	                                (s)   -> MvNormal(p.μs[t], p.Σs[t]))
+	    return D
+	end
+	
+	StanfordAA228V.depth(p::PendulumTrajectoryDistribution) = length(p.μs)
+	
+	function inverted_pendulum_kernel(τ; Σ=0.06^2 * I)  ## ⚠️
+		## sensor disturbance means and variances
+		μs, Σs = [step.x.xo for step in τ], [Σ for _ in τ]
+		return PendulumTrajectoryDistribution(τ[1].s, Σ, μs, Σs)
+	end
+	
+	## system specific perturb function
+	function perturb(samples, ḡ)
+		new_samples = []
+	    for sample in samples
+			## p̄， g， τ， k_max， m_burnin， m_skip
+	        alg = MCMCSampling(ḡ, inverted_pendulum_kernel, sample,
+	                           k_max, m_burnin, m_skip)
+	        mcmc_samples = sample_failures(alg, sys_medium, ψ_medium) ## ⚠️
+	        push!(new_samples, mcmc_samples[end])
+	    end
+	    return new_samples
+	end
+
+	function p̄failure_smooth(ψ, p, τ; ϵ=0.15)
+	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0)
+	    return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)
+	end
+	
+	struct SequentialMonteCarloEstimation
+	    p           # nominal trajectory distribution
+	    ḡs          # intermediate distributions
+	    perturb     # τs′ = perturb(τs, ḡ)
+	    m           # number of samples
+	end
+
+	function estimate(alg::SequentialMonteCarloEstimation, sys, ψ)
+	    p, ḡs, perturb, m = alg.p, alg.ḡs, alg.perturb, alg.m
+	    p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
+	    τs = [rollout(sys, p) for i in 1:m]
+	    ws = [ḡs[1](τ) / p(τ) for τ in τs]
+	    # for (ḡ, ḡ′) in zip(ḡs, ḡs[2:end]...; p̄failure)
+		for (ḡ, ḡ′) in zip(ḡs, vcat(ḡs[2:end], [p̄failure]))
+	        τs′ = perturb(τs, ḡ)
+	        ws .*= [ḡ′(τ) / ḡ(τ) for τ in τs′]
+	        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)]
+	        ws .= mean(ws)
+	    end
+	    return mean(ws) 
+	end
+
+	k_max, m_burnin, m_skip = 10, 1, 1  ## ⚠️ perturb()
+	@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
+		# TODO: WRITE YOUR CODE HERE
+		d = get_depth(sys)
+		p = NominalTrajectoryDistribution(sys, d)
+		## Large ε (close to nominal) → small ε (close to hard failure)
+		ϵs = range(1.0, 0.03; length=4)  ## ⚠️
+		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
+		m = 5  ## number of samples
+		return estimate(SequentialMonteCarloEstimation(p, ḡs, perturb, m), sys, ψ)
+	end
 end
 
 # ╔═╡ 38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
@@ -3849,6 +3979,7 @@ version = "1.8.1+0"
 
 # ╔═╡ Cell order:
 # ╟─54107cf5-8c8f-495f-8709-07b904ca98ae
+# ╟─e7509db7-bc59-4541-a145-cec0fa1b7c7a
 # ╟─6b17139e-6caf-4f07-a607-e403bf1ad794
 # ╠═14964632-98d8-4a2f-b2f6-e3f28b558803
 # ╟─117d0059-ce1a-497e-8667-a0c2ef20c632
@@ -3953,6 +4084,8 @@ version = "1.8.1+0"
 # ╟─f180bd3a-12da-4942-b2af-2df2f5887201
 # ╠═cb7b9b9f-59da-4851-ab13-c451c26117df
 # ╟─759534ca-b40b-4824-b7ec-3a5c06cbd23e
+# ╠═1ddf486f-6eb5-4962-a158-e43feaab055b
+# ╟─557f79f0-a4e3-4de9-b2e4-24f3fc307f3b
 # ╟─7987c20d-68e8-441b-bddc-3f0ae7c3591d
 # ╟─da2d692a-8378-435e-bd6b-c0e65caef542
 # ╟─23999cd9-543b-47dc-a0b2-e133ba95891e
