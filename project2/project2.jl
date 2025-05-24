@@ -58,8 +58,8 @@ md"**Summary of the notebook:**
 
 | System                             | Algorithm                                 |
 |:----------------------------------|:------------------------------------------|
-| Small system (1D Gaussian)         | Adaptive importance sampling (Cross entropy method), Bayesian Estimation |
-| Medium system (Inverted Pendulum)  | - |
+| Small system (1D Gaussian)         | Adaptive importance sampling (Cross entropy method), Bayesian Estimation (Beta distribution) |
+| Medium system (Inverted Pendulum)  | Sequential Monte Carlo estimation (Particle filtering) |
 | Large system (Aircraft Collision Avoidance) | - |
 
 "
@@ -1058,6 +1058,8 @@ _We will report the mean and standard deviation of your estimates._
 # ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
 ## Sequencial Monte Carlo estimation (particle filtering)
 begin
+	# using StatsBase
+	
 	## Metropolis-Hastings algorithm (MCMC)
 	struct MCMCSampling
 	    p̄       # target density
@@ -1104,21 +1106,22 @@ begin
 	end
 	
 	StanfordAA228V.depth(p::PendulumTrajectoryDistribution) = length(p.μs)
-	
-	function inverted_pendulum_kernel(τ; Σ=0.06^2 * I)  ## ⚠️
+
+	## 1D-Gaussian model
+	function inverted_pendulum_kernel(τ; Σ=0.05^2 * I) 
 		## sensor disturbance means and variances
 		μs, Σs = [step.x.xo for step in τ], [Σ for _ in τ]
 		return PendulumTrajectoryDistribution(τ[1].s, Σ, μs, Σs)
 	end
-	
+
 	## system specific perturb function
-	function perturb(samples, ḡ)
+	function perturb(sys::MediumSystem, ψ, samples, ḡ)
 		new_samples = []
 	    for sample in samples
 			## p̄， g， τ， k_max， m_burnin， m_skip
 	        alg = MCMCSampling(ḡ, inverted_pendulum_kernel, sample,
 	                           k_max, m_burnin, m_skip)
-	        mcmc_samples = sample_failures(alg, sys_medium, ψ_medium) ## ⚠️
+	        mcmc_samples = sample_failures(alg, sys, ψ)
 	        push!(new_samples, mcmc_samples[end])
 	    end
 	    return new_samples
@@ -1138,28 +1141,36 @@ begin
 
 	function estimate(alg::SequentialMonteCarloEstimation, sys, ψ)
 	    p, ḡs, perturb, m = alg.p, alg.ḡs, alg.perturb, alg.m
-	    p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
 	    τs = [rollout(sys, p) for i in 1:m]
 	    ws = [ḡs[1](τ) / p(τ) for τ in τs]
-	    # for (ḡ, ḡ′) in zip(ḡs, ḡs[2:end]...; p̄failure)
-		for (ḡ, ḡ′) in zip(ḡs, vcat(ḡs[2:end], [p̄failure]))
-	        τs′ = perturb(τs, ḡ)
-	        ws .*= [ḡ′(τ) / ḡ(τ) for τ in τs′]
-	        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)]
-	        ws .= mean(ws)
+		# p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
+	    # for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
+		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## ⚠️ No hard failure dist
+	        τs′ = perturb(sys, ψ, τs, ḡ)
+	        ws .*= [ḡ′(τ) / (ḡ(τ) + 1e-10) for τ in τs′]
+			println(ws[1:5])
+		    if sum(ws) > 0.0
+		        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)]  ## resample
+				# τs = sample(τs′, Weights(ws), m; replace=true) ## resample
+				ws .= mean(ws)
+		    else
+		        @warn "All weights are zero, skipping resampling"
+		    end
 	    end
+		println("👉 ", mean(ws))
+		println(" ")
 	    return mean(ws) 
 	end
 
-	k_max, m_burnin, m_skip = 10, 1, 1  ## ⚠️ perturb()
+	k_max, m_burnin, m_skip = 5, 1, 1  ## perturb() ⚠️ 
 	@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
 		# TODO: WRITE YOUR CODE HERE
 		d = get_depth(sys)
 		p = NominalTrajectoryDistribution(sys, d)
-		## Large ε (close to nominal) → small ε (close to hard failure)
-		ϵs = range(1.0, 0.03; length=4)  ## ⚠️
+		## Large ε (close to nominal) → small ε (close to hard failure)  
+		ϵs = [1.0, 0.5, 0.25, 0.19] ## ⚠️
 		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
-		m = 5  ## number of samples
+		m = 15 ## number of samples ⚠️
 		return estimate(SequentialMonteCarloEstimation(p, ḡs, perturb, m), sys, ψ)
 	end
 end
