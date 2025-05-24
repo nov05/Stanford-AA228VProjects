@@ -1,4 +1,4 @@
 .DS_Store
-*.val
+# *.val    ## removed by nov05, 20250524
 *backup*
 project1/*-project1.jl

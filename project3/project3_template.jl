@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.8
+# v0.20.4
 
 using Markdown
 using InteractiveUtils
@@ -7,7 +7,7 @@ using InteractiveUtils
 # This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
 macro bind(def, element)
     #! format: off
-    return quote
+    quote
         local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
         local el = $(esc(element))
         global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
@@ -21,6 +21,7 @@ end
 using StanfordAA228V
 
 # ╔═╡ 173388ab-207a-42a6-b364-b2c1cb335f6b
+# ╠═╡ show_logs = false
 begin
 	import MarkdownLiteral: @mdx
 
@@ -33,40 +34,26 @@ begin
 	using Distributions
 	using Random
 	using Plots
-	using ReverseDiff
-	using Optim
+	using ForwardDiff
+	import ForwardDiff: gradient, hessian, jacobian
+	using IntervalArithmetic
 	using Parameters
 	using BSON
 	using GridInterpolations
 	using LinearAlgebra
+	using LazySets
+	using JuMP
+	using SCS
+	using Flux
 
 	default(fontfamily="Computer Modern", framestyle=:box) # LaTeX-style plotting
 
 	md"> _Additional package management._"
 end
 
-# ╔═╡ 54107cf5-8c8f-495f-8709-07b904ca98ae
-md"* Pluto notebook worked on by Nov05 on 2025-05-17  
-* Check [the project documentation](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.jdlp0w7brg0)  
-* Check [the FAQs](https://github.com/nov05/Stanford-AA228VProjects/blob/main/AA228V-FAQs.md)  
-* Check the Julia package \"StanfordAA228V\" [source code](.julia/packages/StanfordAA228V)  
-* Check [the textbook notes](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.qfey2q7ioy3x), e.g. Ctrl+F to search for \"fuzzing\"
-"
-
-# ╔═╡ e7509db7-bc59-4541-a145-cec0fa1b7c7a
-md"**Summary of the notebook:**  
-
-| System                             | Algorithm                                 |
-|:----------------------------------|:------------------------------------------|
-| Small system (1D Gaussian)         | Adaptive importance sampling estimation (Cross entropy method), Bayesian estimation (Beta distribution) |
-| Medium system (Inverted Pendulum)  | Sequential Monte Carlo estimation (aka. Particle filtering) |
-| Large system (Aircraft Collision Avoidance) | - |
-
-"
-
 # ╔═╡ 117d0059-ce1a-497e-8667-a0c2ef20c632
 md"""
-# Project 2: Estimating failure probability
+# Project 3: Estimate reachable sets
 _Please wait until the entire notebook is finished loading before proceeding (you may get temporary errors)._
 """
 
@@ -78,8 +65,9 @@ highlight(md"""_See the three **"⟶ Task"** sections below for where to fill ou
 
 # ╔═╡ da5b4000-0bce-4fc2-be85-dada21264ca3
 textbook_details([
-	"Chapter 6. _Failure Distribution_",
-	"Chapter 7. _Failure Probability Estimation_"])
+	"Chapter 8. _Reachability for Linear Systems_",
+	"Chapter 9. _Reachability for Nonlinear Systems_",
+])
 
 # ╔═╡ 0456a732-2672-4108-a241-db9ae879a913
 
@@ -87,274 +75,92 @@ textbook_details([
 # ╔═╡ 6e8ab7c9-fb49-4d89-946d-c7d7588c199a
 md"""
 ## Julia/Pluto tips
-Useful tips you may be interested in regarding Julia and Pluto.
+Useful tips you may be interested in regarding Julia, Pluto, and plotting.
+
+[![html](https://img.shields.io/badge/static%20html-Julia+Pluto-0072B2)](https://sisl.github.io/AA228VLectureNotebooks/media/html/julia_pluto_session.html)
+[![html](https://img.shields.io/badge/static%20html-Julia%20Plotting-0072B2)](https://sisl.github.io/AA228VLectureNotebooks/media/html/julia_plotting.html)
 """
-
-# ╔═╡ fe044059-9102-4e7f-9888-d9f03eec69ff
-html_expand("Expand for general Julia/Pluto tips.", [
-	html"<h2hide>Julia packages</h2hide>",
-	md"""
-	Feel free to use as many external Julia packages as you like. Running `using PackageName` will automatically install it in this notebook.
-
-	[List of Julia packages.](https://juliapackages.com/)""",
-	html"<h2hide>Dependent cells</h2hide>",
-	md"""
-	Unlike Jupyter notebooks, Pluto has _dependent cells_. Meaning, if one cell uses the variable `x` and another cell defines `x`, then the first cell will _re-run_ when `x` is changed. This means there is no "hidden global state".
-
-	See the [Pluto README](https://github.com/fonsp/Pluto.jl?tab=readme-ov-file) for details/examples.""",
-	html"<h2hide>New cells</h2hide>",
-	md"""
-You can create as many new cells anywhere as you like. Click the `+` icon on the right or hit `CTRL+Enter` within an existing cell to create a new one below it.
-- **Important**: Please do not modify/delete any existing cells.""",
-	html"<h2hide>Running code</h2hide>",
-	md"""
-After editing a cell, you can run it several ways:
-1. To run the current cell: `<SHIFT+ENTER>`
-1. To run the current cell and create a new one below: `<CTRL+ENTER>` or `<CMD+ENTER>`
-1. To run all cells with unsaved changes: `<CTRL+S>` or `<CMD+S>`
-	""",
-	html"<h2hide>Multiple lines of code in a cell</h2hide>",
-	md"""
-To put multple lines of code in a single cell in Pluto, wrap with `begin` and `end`:
-```julia
-begin
-	x = 10
-	y = x^2
-end
-```""",
-	html"<h2hide>Locally scoped cells</h2hide>",
-	md"""
-Use Julia's `let` block to create locally scoped variables:
-```julia
-ℓ = let d = get_depth(sys)
-	p = NominalTrajectoryDistribution(sys, d)
-	τ = rollout(sys, d)
-	logpdf(p, τ)
-end
-```
-The last line of code in the `let` block will be returned and assigned to the globally scoped `ℓ` variable in this case.
-
-This way, you can reuse variable names such as `τ` without affecting other cells that may also use that name in global scope.
-
-You could also just define a new function:
-```julia
-function my_test(sys)
-	d = get_depth(sys)
-	p = NominalTrajectoryDistribution(sys, d)
-	τ = rollout(sys, d)
-	return logpdf(p, τ)
-end
-
-ℓ = my_test(sys)
-```
-	""",
-	html"<h2hide>Suppress cell output</h2hide>",
-	md"""
-To suppress the Pluto output of a cell, add a semicolon `;` at the end.
-```julia
-x = 10;
-```
-or
-```julia
-begin
-	x = 10
-	y = x^2
-end;
-```
-""",
-	html"<h2hide>Underscore as digit separator</h2hide>",
-	md"""
-You can use the underscore `_` as a convenient digit separator:
-```julia
-1000000 == 1_000_000 # true
-100000 == 100_000 # true
-10000 == 10_000 # true
-1000 == 1_000 # true
-```
-[Link to Julia docs](https://docs.julialang.org/en/v1/manual/integers-and-floating-point-numbers/#:~:text=The%20underscore).
-""",
-	html"<h2hide>Unicode symbols</h2hide>",
-	md"""
-You can use Unicode—and even emojis 🙃—as variable and function names. Here are some common ones we use throughout this course:
-
-| Unicode | Code |
-|:-------:|:----:|
-| `τ` | `\tab` |
-| `ψ` | `\psi` |
-| `ℓ` | `\ell` |
-| `π` | `\pi` |
-| `σ` | `\sigma` |
-| `Σ` | `\Sigma` |
-| `θ` | `\theta` |
-| `ω` | `\omega` |
-| `²` | `\^2` |
-| `₂` | `\_2` |
-| `🍕` | `\:pizza:` |
-
-To enter them into cells, type the above "**Code**" and hit `<TAB><TAB>` (or `<TAB><ENTER>`). Feel free to use any Unicode/emojis to your hearts desire.
-
-See the Julia docs for more examples: [https://docs.julialang.org/en/v1/manual/unicode-input/](https://docs.julialang.org/en/v1/manual/unicode-input/)
-"""
-])
-
-# ╔═╡ 41406be3-4c2d-41db-bdb4-9e2ff875cebe
-highlight(md"Here's the link to the notebook on [Julia and Pluto tips](https://sisl.github.io/AA228VLectureNotebooks/media/html/julia_pluto_session.html).")
 
 # ╔═╡ a21612a1-1092-4892-9132-629833e7c867
 
 
 # ╔═╡ ec776b30-6a30-4643-a22c-e071a365d50b
 md"""
-## Hints
-Expand the sections below for some helpful hints.
+## Hints and FAQs
+Expand the sections below for some helpful hints or refer to the FAQs.
+
+[![faqs](https://img.shields.io/badge/AA228V-FAQs-0072B2)](https://github.com/sisl/AA228V-FAQs)
 """
 
-# ╔═╡ 18754cc6-c089-4245-ad10-2848594e49b4
-html_expand("Expand for useful interface functions.", [
-	html"<h2hide>Useful interface functions</h2hide>",
-	md"""
-	The following functions are provided by `StanfordAA228V.jl` that you may use.
-	""",
-	html"<h3hide><code>NominalTrajectoryDistribution</code></h3hide>",
-	md"""
-**`NominalTrajectoryDistribution(sys::System, d::Int)::TrajectoryDistribution`** — Returns the nominal trajectory distribution for the system `sys` over depth `d`.
-- Use this to evaluate the nominal likelihood of the trajectory.
-""",	
-	html"<h3hide><code>rollout</code></h3hide>",
-	md"""
-**`rollout(sys::System; d)::Array`** — Run a single rollout of the system `sys` to a depth of `d`.
-- `τ` is written as `\tau<TAB>` in code.
-```julia
-function rollout(sys::System; d=1)
-    s = rand(Ps(sys.env))
-    τ = []
-    for t in 1:d
-        o, a, s′ = step(sys, s) # For each rollout call, step is called d times.
-        push!(τ, (; s, o, a))
-        s = s′
-    end
-    return τ
-end
-```
-""",
-	html"<h3hide><code>isfailure</code></h3hide>",
-	md"""
-**`isfailure(ψ, τ)::Bool`** — Using the specification `ψ`, check if the trajector `τ` led to a failure.
-- `ψ` is written as `\psi<TAB>` in code.
-"""])
+# ╔═╡ 5aafffc6-8e3b-4591-99f6-6ee3b8082786
+html_expand("Check out the <code>LazySets.jl</code> docs.", md"""
+The documentation for the `LazySets` package is an excellent resource:
+- [Latest documentation](https://juliareach.github.io/LazySets.jl/dev/)
+- [`overapproximate`](https://juliareach.github.io/LazySets.jl/dev/lib/approximations/overapproximate/): Specifically the method that as an optional `[ε]::Real` error tolerance.
+- [`box_approximation`](https://juliareach.github.io/LazySets.jl/dev/lib/approximations/box_approximation/)
+""")
 
-# ╔═╡ c4fa9af9-1a79-43d7-9e8d-2854652a4ea2
-html_expand("Stuck? Expand for hints on what to try.", md"""
-$(hint(md"Try importance sampling with your fuzzing distributions! See _Algorithm 7.3_ in the textbook.
+# ╔═╡ bd8cfc1d-cf0e-42e2-8e46-c763f142e8f3
+html_expand("Stuck on the nonlinear system (medium)? Expand for hints on what to try.", hint(Markdown.parse("""Check out the _natural inclusion_ techniques in section 9.2 of the textbook.
 
-_Other techniques_: Bayesian estimation with a good prior, multiple importance sampling, the cross-entropy estimation method, etc. (or something entirely different!?)"))""")
+We do _not_ restrict the number of vertices of your sets. So you can try other approaches detailed in chapter 9 _Reachability for Nonlinear System_ in the textbook.""")))
+
+# ╔═╡ 5d389282-466d-47d8-ae69-0794cf620f27
+html_expand("Stuck on the nonlinear neural network system (large)? Expand for hints on what to try.", hint(Markdown.parse("""Check out the _natural inclusion_ techniques in section 9.2 of the textbook.
+
+We do _not_ restrict the number of vertices of your sets.
+
+But if you're not satisfied with the (overly approximated) sets from natural inclusion, then check out the section on using `NeuralVerification.jl` ([link](#neural-verification)).
+
+Note that algorithms like _Taylor inclusion_ and _conservative linearization_ are **unsound** for the nonlinear neural network because the ReLU activation functions are not continuous and differentiable (see details in section 9.7 of the textbook).""")))
 
 # ╔═╡ 6bad6e8b-c021-41d2-afbb-bcd0242138dd
 
 
-# ╔═╡ dba42df0-3199-4c31-a735-b6b514703d50
-md"""
-## Common errors
-These are some common errors you may run into.
-"""
+# ╔═╡ 1167fdfb-b097-4d18-b982-b1786794f8cf
+html_space()
 
-# ╔═╡ 109c3d27-2c23-48a7-9fd7-be8a1f359e55
-html_expand("Expand if you're using <code>Normal</code> and/or <code>MvNormal</code>.", md"""
-The univariate normal (Gaussian) distribution in Julia takes in a mean $\mu$ and standard deviation $\sigma$:
-```julia
-Normal(μ, σ)
-```
-
-Where the **multivariate** normal distribution takes in a mean vector $\mathbf{\mu}$ and the _covariance_ matrix $\mathbf{\Sigma}$:
-```julia
-MvNormal(𝛍, 𝚺)
-```
-
-Meaning, if you want a 2d diagonal multivariate normal with mean zero and standard deviation of $\sigma = 0.1$, then you can do:
-```julia
-MvNormal(zeros(2), 0.1^2*I)
-```
-where "`I`" comes from the `LinearAlgebra` module (already loaded for you).
-""")
-
-# ╔═╡ bc2f62f5-1330-46cd-bb81-411baa483488
-html_expand("Expand if you're using <code>initial_state_distribution</code>, <code>disturbance_distribution</code>, or <code>depth</code>.", md"""
-The `StanfordAA228V` module defines several functions that you **might be adding new methods to (i.e., new type signatures)**.
-- `initial_state_distribution`
-- `disturbance_distribution`
-- `depth`
-
-Say you're implementing fuzzing and you define a new `TrajectoryDistribution` type and want to create your own version of `disturbance_distribution` for your new type:
-```julia
-struct NewTrajectoryDistribution <: TrajectoryDistribution
-	some_parameter
-end
-```
-Then you will need to use the Julia dot notation to add a method to `StanfordAA228V`:
-```julia
-function StanfordAA228V.disturbance_distribution(p::NewTrajectoryDistribution)
-	# some code
-end
-```
-This code will add a new method for `disturbance_distribution` with the input type of `NewTrajectoryDistribution`. Make sure to add the `StanfordAA228V.` to the function names that you create which are _also_ defined in `StanfordAA228V`:
-- See the [`StanfordAA228V.jl`](https://github.com/sisl/StanfordAA228V.jl/blob/d2357ba8cdaf680b207a261495d785456981c66d/src/StanfordAA228V.jl#L39-L41) file.
-
-This is common in Julia where you need to use the funciton name qualified with the module name. Read more in the ["Namespace Management" section of the Julia docs.](https://docs.julialang.org/en/v1/manual/modules/#namespace-management)
-""")
-
-# ╔═╡ bed9a6ed-3ca0-492d-9141-a34b601ea315
-highlight(md"See the FAQs page for continuously updated tips: [https://github.com/sisl/AA228V-FAQs](https://github.com/sisl/AA228V-FAQs)")
-
-# ╔═╡ a46702a3-4a8c-4749-bd00-52f8cce5b8ee
-html_half_space()
-
-# ╔═╡ 84d9c552-2e78-4922-9ec0-4d12d0c62643
+# ╔═╡ 55521bf3-eb1d-4ea1-9c18-aa8ba4461bff
 html_expand("Expand for <code>SmallSystem</code> code.", md"""
 ```julia
 ## Agent
-struct NoAgent <: Agent end
-(c::NoAgent)(s, a=missing) = nothing
-Distributions.pdf(c::NoAgent, s, x) = 1.0
+struct ProportionalController <: Agent
+    k
+end
+
+(c::ProportionalController)(s, a=missing) = c.k' * s
+
+Πo(agent::ProportionalController) = agent.k'
 
 ## Environment
-struct SimpleGaussian <: Environment end
-(env::SimpleGaussian)(s, a, xs=missing) = s
-Ps(env::SimpleGaussian) = Normal(0, 1) # Initial state distribution
+@with_kw struct MassSpringDamper <: Environment
+    m = 1.0
+    k = 10.0
+    c = 2.0
+    dt = 0.05
+end
+
+function (env::MassSpringDamper)(s, a)
+    return Ts(env) * s + Ta(env) * a
+end
+
+Ts(env::MassSpringDamper) = [1 env.dt; -env.k*env.dt/env.m 1-env.c*env.dt/env.m]
+Ta(env::MassSpringDamper) = [0 env.dt/env.m]'
+Ps(env::MassSpringDamper) = Product([Uniform(-0.2, 0.2), Uniform(-1e-12, 1e-12)])
+𝒮₁(env::MassSpringDamper) = Hyperrectangle(low=[-0.2, 0.0], high=[0.2, 0.0])
 
 ## Sensor
-struct IdealSensor <: Sensor end
+struct AdditiveNoiseSensor <: Sensor
+    Do
+end
 
-(sensor::IdealSensor)(s) = s
-(sensor::IdealSensor)(s, x) = sensor(s)
+(sensor::AdditiveNoiseSensor)(s) = sensor(s, rand(Do(sensor, s)))
+(sensor::AdditiveNoiseSensor)(s, x) = s + x
 
-Distributions.pdf(sensor::IdealSensor, s, xₛ) = 1.0
+Do(sensor::AdditiveNoiseSensor, s) = sensor.Do
+Os(sensor::AdditiveNoiseSensor) = I
 ```
 """)
-
-# ╔═╡ e6e675bf-5181-4e45-8c5d-e576aa411064
-html_expand("Stuck? <span style='color: crimson'>Expand for hints</span>.", hint(md"""If you're trying fuzzing as a proposal distribution, the `disturbance_distribution` for the `SmallSystem` does not apply:
-
-```julia
-D = DisturbanceDistribution((o)->Deterministic(),
-							(s,a)->Deterministic(),
-							(s)->Deterministic())
-```
-where
-```julia
-struct DisturbanceDistribution
-    Da # agent disturbance distribution
-    Ds # environment disturbance distribution
-    Do # sensor disturbance distribution
-end
-```
-but the `initial_state_distribution` should be changed:
-```julia
-function StanfordAA228V.initial_state_distribution(p::YourFuzzingDistribution)
-    return Normal(SOME_MEAN, SOME_STD)
-end
-```
-See _Example 4.3_ in the textbook for how this is applied to the pendulum.
-"""))
 
 # ╔═╡ 17fa8557-9656-4347-9d44-213fd3b635a6
 Markdown.parse("""
@@ -362,223 +168,92 @@ Markdown.parse("""
 The system is comprised of an `agent`, environment (`env`), and `sensor`.
 """)
 
-# ╔═╡ 22feee3d-4627-4358-9937-3c780b7e8bcb
-sys_small = System(NoAgent(), SimpleGaussian(), IdealSensor());
+# ╔═╡ e93d0515-c7d4-4af6-9041-fda738af5caa
+begin
+	local ϵ = 0.5
 
-# ╔═╡ fd8c851a-3a42-41c5-b0fd-a12085543c9b
-Markdown.MD(
-	md"""
-	# 1️⃣ **Small**: 1D Gaussian
-	The small system is a simple 1D Gaussian system.
-	- There are no dynamics (rollout depth $d=1$).
-	- There are no disturbances.
-	- The (initial and only) state $s$ is sampled from $\mathcal{N}(0,1)$.
-	""",
-	depth_highlight(sys_small),
-	md"_(Same small system as Project 1)_"
-)
+	sys_small = System(
+		ProportionalController([0.0, -1.0]),
+		MassSpringDamper(),
+		AdditiveNoiseSensor(Product([Uniform(-ϵ, ϵ), Uniform(-ϵ, ϵ)]))
+	)
+end;
 
 # ╔═╡ 6f3e24de-094c-49dc-b892-6721b3cc54ed
 SmallSystem::Type = typeof(sys_small) # Type used for multiple dispatch
 
-# ╔═╡ 45f7c3a5-5763-43db-aba8-41ef8db39a53
-md"""
-## Small environment
-The environment is a standard normal (Gaussian) distribution $\mathcal{N}(0, 1)$.
-"""
-
-# ╔═╡ 9c1daa96-76b2-4a6f-8d0e-f95d26168d2b
-ps_small = Ps(sys_small.env)
-
-# ╔═╡ ab4c6807-5b4e-4688-b794-159e26a1599b
-ψ_small = LTLSpecification(@formula □(s->s > -2));
-
-# ╔═╡ 370a15eb-df4b-493a-af77-00914b4616ea
+# ╔═╡ 592e4e77-8104-4464-8e10-ee2834c7c0ab
 Markdown.parse("""
 ## Small specification \$\\psi\$
 The specification \$\\psi\$ (written `\\psi<TAB>` in code) indicates what the system should do:
 
-\$\$\\psi(\\tau) = \\square(s > $(ψ_small.formula.ϕ.c))\$\$
+\$\$\\psi(\\tau) = \\square\\left( |p| < 0.3 \\right)\$\$
 
-i.e., "the state \$s\$ in the trajectory \$\\tau\$ should _always_ (\$\\square\$) be greater than \$$(ψ_small.formula.ϕ.c)\$, anything else is a failure."
+i.e., "the state position \$p\$ in the trajectory \$\\tau\$ should _always_ (\$\\square\$) be less than \$0.3\$, anything else is a failure."
+
+We use the `AvoidSetSpecification` to define a _failure set_ where we want to ensure that the reachable set \$\\mathcal{R}_{1:d}\$ does not intersect with its complement:
+
+\$\$\\mathcal{R}_{1:d} \\cap \\neg\\psi = \\varnothing\$\$
 """)
 
-# ╔═╡ 166bd412-d433-4dc9-b874-7359108c0a8b
-Markdown.parse("""
-A failure is highly unlikely given that the probability of failure is:
+# ╔═╡ ab4c6807-5b4e-4688-b794-159e26a1599b
+ψ_small = AvoidSetSpecification(
+	HalfSpace([1.0, 0.0], -0.3) ∪ HalfSpace([-1.0, 0.0], -0.3));
 
-\$\$\\begin{align}
-P(\\neg\\psi(\\tau)) &= 1 - P(\\psi(\\tau)) \\\\
-					 &= 1 - P(s > $(ψ_small.formula.ϕ.c)) \\\\
-				     &= P(s < $(ψ_small.formula.ϕ.c)) \\approx $(round(cdf(ps_small, ψ_small.formula.ϕ.c), sigdigits=4))
-\\end{align}\$\$
-where \$\\neg\\psi(\\tau)\$ indicates that the specification was violated and \$P\$ is the _cumulative distribution function_ (`cdf` in Julia).
-""")
-
-# ╔═╡ cf42542a-f519-478d-a57e-652c420f4ed5
-
-
-# ╔═╡ b6573f2b-52e5-4881-91e7-759d628bf7fe
-md"""
-## Probability vs. likelihood
-In _Project 1_, you found trajectories that had high **_likelihoods_**, i.e., $p_\theta(\tau)$ where $\theta$ are the parameters of the system (e.g., the mean and std of the simple Gaussian system).
-
-The likelihood measures the **_probability density_** of the "data" (in our case the trajectory $\tau$), given the set of parameters $\theta$ (using `pdf`). Likelihood values are non-negative and must integrate to one:
-
-$$\begin{equation}
-\int_\tau p_\theta(\tau) \mathrm{d}\tau = 1
-\end{equation}$$
-where likelihoods may be much larger than one (e.g., as in the inverted pendulum problem).
-"""
-
-# ╔═╡ 9d051b1b-dcf4-418c-988c-37561a10f485
-md" $γ=$ $(@bind γ Slider(-4:0.1:4, show_value=true, default=-1))"
-
-# ╔═╡ a67ea28d-3927-40f9-a049-b9faeb0cfa58
-ψ_cdf = LTLSpecification(@eval @formula □(s->s > $γ));
-
-# ╔═╡ bb4b252d-fc49-49d9-a31b-5092d73dc244
-Markdown.parse("""
-The specification \$\\psi(\\tau) = \\square(s > γ)\$ for the chosen \$γ\$ is \$\\psi(\\tau) = \\square(s > $(ψ_cdf.formula.ϕ.c))\$ where:
-""")
-
-# ╔═╡ 9ea24b88-03b3-434f-a703-af197f754dcd
-Markdown.parse("""
-\$\$\\begin{align}
-p(s) &\\approx $(round(pdf(ps_small, ψ_cdf.formula.ϕ.c), sigdigits=4)) \\tag{probability density} \\\\
-P(s < γ) &\\approx $(round(cdf(ps_small, ψ_cdf.formula.ϕ.c), sigdigits=4)) \\tag{cumulative probability}
-\\end{align}\$\$
-""")
-
-# ╔═╡ 6ea3ba83-ade5-4a19-ad60-b3fe5c56e3b8
-md"""
-### Probability of an event
-In _this_ project, we are now interested in measuring the **_probability_** of an event, where the probability is a value between **zero** and **one**. 
-
-If you have Monte Carlo samples of trajectories from your system, then the naive way to estimate the probability of an event (a failure in our case) would be:
-
-$$\begin{equation}
-\hat{P}_\text{event} = \frac{\text{number of times that event occurred}}{\text{total number of samples}}
-\end{equation}$$
-
-But Monte Carlo estimation can be _super_ inefficient. Therefore, this project is designed for you to explore more sophisticated algorithms to efficiently estimate the probabilty of an event.
-
-_(Note for simple Gaussian problems, we can just use the `cdf` to evaluate this probability exactly, but we randomize the threshold so you cannot access it directly—just to make things more interesting)_
-"""
-
-# ╔═╡ cd2adeb4-493f-4d37-8e0d-9501637c6000
-
-
-# ╔═╡ 42456abf-4930-4b01-afd1-fce3b4881e28
-Markdown.MD(
-	HTML("<h2 id='baseline'>Baseline: Monte Carlo estimate</h2>"),
-	md"""
-The Monte Carlo baseline algorithm will sample $m$ trajectories of depth $d$ from the nominal trajectory distribution and count how many trajectories were a failure.
-
-The frequentist estimate of the failure probability is then computed simply as:
-
-$$\begin{equation}
-\hat{P}_\text{fail} = \frac{\text{number of failures}}{\text{total number of trajectories}}
-\end{equation} = \mathbb{E}_i \Big[ \mathbb{1}\big(\neg\psi(\tau_i)\big) \Big]$$
-
-where $\neg\psi(\tau_i)$ checks if trajectory $\tau_i$ is a failure, `isfailure(τᵢ)`, and $\mathbb{1}$ is the indicator function (but conveniently, Julia treats `true` as `1` and `false` as `0`).
-
-_This is equivalent to `DirectEstimation` (algorithm 7.1)._
-""")
-
-# ╔═╡ cc11217f-e070-4d20-8ebe-18e7eb977487
-highlight(md"""**Note**: You can access the number of `step` calls via `stepcount()`""")
+# ╔═╡ 402c0eaa-727f-4c54-89ec-64c3dfb8002c
+fbaseline(sys,ψ,seeds) =
+	aggregate_performance(estimate_probability_baseline, sys, ψ; seeds);
 
 # ╔═╡ 92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 Markdown.parse("""
-## ⟶ **Task (Small)**: Estimate failure probability
-Please fill in the following `estimate_probability` function.
+## ⟶ **Task (Small)**: Estimate the reachable set
+Please fill in the following `estimate_reachable_sets` function.
 """)
 
 # ╔═╡ a003beb6-6235-455c-943a-e381acd00c0e
 start_code()
 
-# ╔═╡ de7a8c16-3048-4952-9185-b2048986c293
-md"✅ Check [my **Bayesian estimation** solution notebook in HTML](https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/project2-small-bayesian.html)." 
-
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
 
-# ╔═╡ 1bce2d86-cb46-4c44-ab62-b440115bf967
-## Nov05: code explanation
-begin
-	println(Ps(sys_small.env)) 
-	println(robustness(-1.9, ψ_small.formula, w=1.0))
-	println(robustness(-2.0, ψ_small.formula, w=1.0))
-	println(robustness(-2.1, ψ_small.formula, w=1.0))
-	local d = get_depth(sys_small)
-	local p = NominalTrajectoryDistribution(sys_small, d)
-	local τs = [rollout(sys_small, p; d) for _ in 1:200]
-	println("There were $(sum(isfailure.(ψ_small, τs))) failures out of 200 rollouts.")
-	println(τs[1][d].s)
-	println("robustness = ", robustness([τ[d].s for τ in τs], ψ_small.formula, w=1.0))
-	# println("p = ", p)
-end
+# ╔═╡ 8082ce45-6e93-4d98-8f90-79935deadec8
 
-# ╔═╡ e8aea014-ca38-4cab-86c6-a445e6842bc2
-## Nov05: code explanation
-begin
-	struct TestProposalDistribution <: TrajectoryDistribution
-		# Σₒ ## sensor disturbance covariance
-		μ
-		σ
-	end
-	## Function disturbance_distribution() for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::TestProposalDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	function StanfordAA228V.initial_state_distribution(p::TestProposalDistribution)
-		return Normal(p.μ, p.σ)
-	end
-	## increase variance
-	local q = TestProposalDistribution(ps_small.μ, 2000 * ps_small.σ)  
-	local τs = [rollout(sys_small, q; d=1) for _ in 1:10]
-	println("τ = $(τs[1])")
-	println("state = $(τs[1][1].s)")
+
+# ╔═╡ 38f3d8cf-21cf-4c77-bd45-a618b9b2e1cd
+highlight(md"""
+We recommend adding `@progress` to for loops in the `reachable` algorithms, e.g.:
+
+```julia
+@progress for d in 1:alg.h
+	# ...
 end
+```
+
+This way you get incremental feedback that the algorithms are making progress.
+""")
 
 # ╔═╡ e2418154-4471-406f-b900-97905f5d2f59
 html_quarter_space()
 
 # ╔═╡ 1789c8b5-b314-4aba-ad44-555be9a85984
 md"""
-# 📊 Small Tests
-We'll automatically test your `estimate_probability(::SmallSystem, ψ)` function below.
-
-**Note**: The next three tests are _only_ local validation tests.
-
-_The **graded** tests to be submitted to Gradescope are located [below](#graded-test)._
+# 📊 Small Test
+We'll automatically test your `estimate_reachable_sets(::SmallSystem, ψ)` function below.
 """
 
-# ╔═╡ 535261e3-4cb3-4b0b-954d-7452b2a91b5d
-begin
-	ψ_small_different = LTLSpecification(@formula □(s->s < 2))
-
-	md"""
-	## Different failure threshold
-	Let's test a different failure threshold.
-	"""
-end
-
-# ╔═╡ 02a4098f-a1ee-433c-aea7-8e8fc8a65088
-highlight(md"**Note**: You might fail on some of these specifications. Don't worry, as long as your _average_ estimate over different $\psi$ values is better than random, then the **_graded_** test should pass.")
-
-# ╔═╡ ce99f0cc-5fe8-42c2-af78-ac7211b6b699
-@bind rerun_rand_small Button("Click to rerun random test.")
+# ╔═╡ 97ddd327-94b8-4c2e-a79d-f5304725c25b
+md"""
+## Passing test criteria
+Find a sequence of sets over time $t$ to depth $d$ that:
+1. Over approximates the optimal reachable set using max $4$ vertices per time step.
+2. The sets must not intersect with the failure region.
+3. The sets must not be _under approximations_ of the optimal reachable sets.
+"""
 
 # ╔═╡ fda151a1-5069-44a8-baa1-d7903bc89797
 html_space()
 
-# ╔═╡ e61657ef-961b-42af-89d7-e242d477ba1f
+# ╔═╡ 6ec8a963-726d-4738-9a82-7e0b26b90b16
 html_expand("Expand for <code>MediumSystem</code> code.", md"""
 ```julia
 ## Agent
@@ -587,6 +262,8 @@ struct ProportionalController <: Agent
 end
 
 (c::ProportionalController)(s, a=missing) = c.k' * s
+
+Πo(agent::ProportionalController) = agent.k'
 
 ## Environment
 @with_kw struct InvertedPendulum <: Environment
@@ -599,20 +276,15 @@ end
 end
 
 function (env::InvertedPendulum)(s, a, xs=missing)
-    θ, ω = s[1], s[2]
-    dt, g, m, l = env.dt, env.g, env.m, env.l
-
-    a = clamp(a, -env.a_max, env.a_max)
-
-    ω = ω + (3g / (2 * l) * sin(θ) + 3 * a / (m * l^2)) * dt
-    θ = θ + ω * dt
-    ω = clamp(ω, -env.ω_max, env.ω_max)
-
-    return [θ, ω]
+	θ, ω = s[1], s[2]
+	dt, g, m, l = env.dt, env.g, env.m, env.l
+	ω = ω + (3g / (2 * l) * sin(θ) + 3 * a / (m * l^2)) * dt # No `clamp`
+	θ = θ + ω * dt
+	return [θ, ω]
 end
 
 # Initial state distribution
-Ps(env::InvertedPendulum) = MvNormal(zeros(2), diagm([(π/32)^2, 0.5^2]))
+Ps(env::InvertedPendulum) = Product([Uniform(-π/16, π/16), Uniform(-1.0, 1.0)])
 
 ## Sensor
 struct AdditiveNoiseSensor <: Sensor
@@ -623,59 +295,116 @@ end
 (sensor::AdditiveNoiseSensor)(s, x) = s + x
 
 Do(sensor::AdditiveNoiseSensor, s) = sensor.Do
-
 Os(sensor::AdditiveNoiseSensor) = I
 ```
 """)
 
-# ╔═╡ 1cef8f2a-faee-4709-a0e9-6e5f2e3ce4cd
-html_expand("Stuck? <span style='color: crimson'>Expand for hints</span>.", hint(md"""If you're trying fuzzing as a proposal distribution, the `disturbance_distribution` for the `MediumSystem` applies disturbances to the _sensor_:
-
-```julia
-D = DisturbanceDistribution((o)->Deterministic(),
-							(s,a)->Deterministic(),
-							(s)->MvNormal(SOME_MEAN_VECTOR, SOME_COVARIANCE))
-```
-where
-```julia
-struct DisturbanceDistribution
-    Da # agent disturbance distribution
-    Ds # environment disturbance distribution
-    Do # sensor disturbance distribution
-end
-```
-See _Example 4.3_ in the textbook.
-"""))
-
-# ╔═╡ d18c2105-c2af-4dda-8388-617aa816a567
-Markdown.parse("""
+# ╔═╡ 86f92b1d-87eb-40b0-ad0b-6b888c5fb9cc
+md"""
 ## Medium system
-An inverted pendulum comprised of a `ProportionalController` with an `AdditiveNoiseSensor`.
-""")
+First we define a convenient struct that holds the parameters of the medium system.
+
+$(highlight(md"May be useful when defining functions such as `sets` and `intervals`.
+
+Please do not change these values."))
+"""
+
+# ╔═╡ 0ab3fe4f-a13d-4d92-b3e4-5653f05dafe7
+@with_kw struct PendulumParameters
+	disturbance_mag = 0.01
+	θmin = -π/16
+	θmax = π/16
+	ωmin = -1.0
+	ωmax = 1.0
+end
+
+# ╔═╡ 613443b1-ac8b-4570-b4c7-d107d63a36cd
+md"""
+An inverted pendulum is comprised of a `ProportionalController` with an `AdditiveNoiseSensor`.
+"""
+
+# ╔═╡ 99ccbce1-ac0b-4744-9c26-cb951490f482
+md"""
+We redefine the transition function as follows and remove clamping that was in Projects 1 and 2.
+"""
+
+# ╔═╡ 022f242e-f839-4b6a-b6ff-6ad3b09470a4
+function (env::InvertedPendulum)(s, a, xs=missing)
+	θ, ω = s[1], s[2]
+	dt, g, m, l = env.dt, env.g, env.m, env.l
+	ω = ω + (3g / (2 * l) * sin(θ) + 3 * a / (m * l^2)) * dt # No `clamp`
+	θ = θ + ω * dt
+	return [θ, ω]
+end
 
 # ╔═╡ 77637b5e-e3ce-4ecd-90fc-95611af18002
-sys_medium = System(
-	ProportionalController([-15.0, -8.0]),
-	InvertedPendulum(),
-	AdditiveNoiseSensor(MvNormal(zeros(2), 0.1^2*I))
-);
+begin
+	medium_params = PendulumParameters()
 
-# ╔═╡ 8c78529c-1e00-472c-bb76-d984b37235ab
-Markdown.MD(
-	md"""
-	# 2️⃣ **Medium**: Inverted Pendulum
-	The medium system is a swinging inverted pendulum.
-	- It uses a proportional controller to keep it upright.
-	- The state is comprised of the angle $\theta$ and angular velocity $\omega$ making $s = [\theta, \omega]$
-	- Actions are left/right adjustments in the range $[-2, 2]$
-	- Disturbances $x$ are treated as additive noise: $x \sim \mathcal{N}(\mathbf{0}, 0.1^2I)$
-	""",
-	depth_highlight(sys_medium),
-	md"_(Same medium system as Project 1)_"
-)
+	local disturbance_mag = medium_params.disturbance_mag
+	local θmin, θmax = medium_params.θmin, medium_params.θmax
+	local ωmin, ωmax = medium_params.ωmin, medium_params.ωmax
+
+	local agent = ProportionalController([-15.0, -8.0])
+	local env = InvertedPendulum()
+
+	# Different than Projects 1 and 2 (to be bounded)
+	local sensor = AdditiveNoiseSensor(Product([
+		Uniform(-disturbance_mag, disturbance_mag),
+		Uniform(-disturbance_mag, disturbance_mag)]))
+
+	# Different than Projects 1 and 2 (to be bounded)
+	StanfordAA228V.Ps(env::InvertedPendulum) =
+		Product([Uniform(θmin, θmax), Uniform(ωmin, ωmax)])
+
+	sys_medium = System(agent, env, sensor)
+end;
 
 # ╔═╡ c4c0328d-8cb3-41d5-9740-0197cbf760c2
 MediumSystem::Type = typeof(sys_medium) # Type used for multiple dispatch
+
+# ╔═╡ 8c78529c-1e00-472c-bb76-d984b37235ab
+begin
+	# Different than Projects 1 and 2
+	StanfordAA228V.get_depth(sys::MediumSystem) = 21
+
+	Markdown.MD(
+		md"""
+		# 2️⃣ **Medium**: Inverted Pendulum
+		The medium system is a swinging inverted pendulum.
+		- It uses a proportional controller to keep it upright.
+		- The state is comprised of the angle $\theta$ and angular velocity $\omega$ making $s = [\theta, \omega]$
+		- Actions are left/right adjustments in the range $[-2, 2]$
+		- Disturbances $x$ are treated as additive noise: $x \sim \mathcal{N}(\mathbf{0}, 0.1^2I)$
+		""",
+		depth_highlight(sys_medium)
+	)
+end
+
+# ╔═╡ fd8c851a-3a42-41c5-b0fd-a12085543c9b
+Markdown.MD(
+	Markdown.parse("""
+	# 1️⃣ **Small**: Mass-spring-damper
+	The small system is a simple _mass-spring-damper_. The mass-spring-damper system consists of a mass \$m\$ attached to a wall by a spring with spring constant \$k\$ and a damper with damping coefficient \$c\$.
+	- The state \$s\$ is the position (relative to the resting point) \$p\$ and velocity \$v\$ of the mass, \$s = [p,v]\$
+	- The action is the force \$\\beta\$ applies to the mass.
+	- The rollout depth is \$d=$(get_depth(sys_small))\$.
+	- Disturbances are a noisy measurement of the state with uniform noise with \$\\epsilon = 0.5\$:
+
+	\$\$\\begin{align}
+		x_p \\sim \\mathcal{U}(-\\epsilon, \\epsilon) \\\\
+		x_v \\sim \\mathcal{U}(-\\epsilon, \\epsilon)
+	\\end{align}\$\$
+	
+	_See Appendix A.4 for more system details._
+	"""),
+	depth_highlight(sys_small)
+)
+
+# ╔═╡ 6a7b4f2b-187a-40a3-842f-126d220d40ed
+md""" $t =$ $(@bind t_small Slider(1:get_depth(sys_small), show_value=true))
+
+**Change the time $t$ slider to see the reachable set per time step.**"""
 
 # ╔═╡ b1e9bd40-a401-4630-9a1f-d61b276e72f7
 md"""
@@ -695,45 +424,104 @@ html_quarter_space()
 
 # ╔═╡ 1da9695f-b7fc-46eb-9ef9-12160246018d
 Markdown.parse("""
-## ⟶ **Task (Medium)**: Estimate failure probability
-Please fill in the following `estimate_probability` function.
+## ⟶ **Task (Medium)**: Estimate the reachable set
+Please fill in the following `estimate_reachable_sets` function.
 """)
 
 # ╔═╡ 0606d827-9c70-4a79-afa7-14fb6b806546
 start_code()
 
+# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
+@medium function estimate_reachable_sets(sys::MediumSystem, ψ)
+	# TODO: WRITE YOUR CODE HERE
+end
+
 # ╔═╡ 759534ca-b40b-4824-b7ec-3a5c06cbd23e
 end_code()
 
-# ╔═╡ 1ddf486f-6eb5-4962-a158-e43feaab055b
-## Nov05: code explannation
-println(Ps(sys_medium.env))
+# ╔═╡ 97dbe1e4-8045-4213-866f-6921c733fbeb
 
-# ╔═╡ 557f79f0-a4e3-4de9-b2e4-24f3fc307f3b
-md"ChatGPT: **`FullNormal`** is not a standard type in **`Distributions.jl`**, but it is used in **`POMDPs.jl`** ecosystem (partially observable Markov decision process), specifically in **`POMDPModelTools.jl`**. It is a custom wrapper for a multivariate Gaussian, defined roughly as:
 
-```julia  
-struct FullNormal{T<:Real} <: AbstractMvNormal  
-    μ::Vector{T}  
-    Σ::Matrix{T}  
+# ╔═╡ b1cf81ad-e5cb-40d7-b365-abda3fc67a88
+highlight(md"""
+We recommend adding `@progress` to for loops in the `reachable` algorithms, e.g.:
+
+```julia
+@progress for d in 1:alg.h
+	# ...
 end
-```  
-"
+```
 
-# ╔═╡ 7987c20d-68e8-441b-bddc-3f0ae7c3591d
+This way you get incremental feedback that the algorithms are making progress.
+""")
+
+# ╔═╡ a228c1ac-62cb-4c18-89b9-bda4c3b1c5bb
 html_quarter_space()
 
 # ╔═╡ da2d692a-8378-435e-bd6b-c0e65caef542
 md"""
 # 📊 Medium Test
-We'll automatically test your `estimate_probability(::MediumSystem, ψ)` function below.
+We'll automatically test your `estimate_reachable_sets(::MediumSystem, ψ)` function below.
+"""
+
+# ╔═╡ 50199170-f120-48ee-879c-bbdc11618f1e
+md""" $t =$ $(@bind t_medium Slider(1:get_depth(sys_medium), show_value=true))
+
+**Change the time $t$ slider to see the reachable set per time step.**"""
+
+# ╔═╡ 428575d2-66a9-4a19-9eb0-cdf9b55277f7
+md"""
+## Passing test criteria
+Find a sequence of sets over time $t$ to depth $d$ that:
+1. Over approximates the reachable set (no limit on max vertices).
+2. The sets _may_ intersect with the failure region.
+    - Although, for better leaderboard scores you may want to avoid this.
+3. The sets must not be _under approximations_ of the approximately optimal reachable sets.
 """
 
 # ╔═╡ 60ab8107-db65-4fb6-aeea-d4978aed77bd
 html_space()
 
-# ╔═╡ 155f2bfe-badd-46fe-9d1e-b73099be5e77
-html_expand("Expand for <code>LargeSystem</code> code.", md"""
+# ╔═╡ f8ea2983-c2d0-40ea-b949-9fc478ea45f8
+Markdown.parse("""_The figure above shows several states_ \$s_t\$ _sampled from trajectories and a single trajectory shown as a line._""")
+
+# ╔═╡ 5aae63b2-54ec-421b-84ec-0d4bc9c00c10
+html_expand("Expand for <code>LargeSystem</code> code (surrogate).", md"""
+```julia
+## Agent
+struct NoAgent <: Agent end
+(c::NoAgent)(s, a=missing) = nothing
+Distributions.pdf(c::NoAgent, s, x) = 1.0
+
+## Environment
+@with_kw struct ContinuumWorldSurrogate <: Environment
+    cw::ContinuumWorld = ContinuumWorld()
+    model::Chain
+    disturbance_mag = 0.1
+end
+
+(env::ContinuumWorldSurrogate)(s, a) = env(s, a, rand(Ds(env, s, a)))
+(env::ContinuumWorldSurrogate)(s, a, x) = env.model(s) + x # Call neural network
+
+Ps(env::ContinuumWorldSurrogate) = Ps(env.cw)
+
+Ds(env::ContinuumWorldSurrogate, s, a) =
+	Product([
+	    Uniform(-env.disturbance_mag, env.disturbance_mag),
+	    Uniform(-env.disturbance_mag, env.disturbance_mag)])
+
+## Sensor
+struct IdealSensor <: Sensor end
+
+(sensor::IdealSensor)(s) = s
+(sensor::IdealSensor)(s, x) = sensor(s)
+
+Distributions.pdf(sensor::IdealSensor, s, xₛ) = 1.0
+```
+""")
+
+# ╔═╡ 790f1562-d6ff-4c44-b1ea-1b0ab1dced85
+html_expand("Expand for <code>LargeSystem</code> code (original).", md"""
 ```julia
 ## Agent
 struct InterpAgent <: Agent
@@ -746,46 +534,30 @@ end
 
 Distributions.pdf(c::InterpAgent, o, xₐ) = 1.0
 
+function load_cw_policy(filename::String)
+    res = BSON.load(filename)
+	grid = res[:grid]
+	Q = res[:Q]
+    return grid, Q
+end
+
 ## Environment
-@with_kw struct CollisionAvoidance <: Environment
-    ddh_max::Float64 = 1.0 # [m/s²]
-    𝒜::Vector{Float64} = [-5.0, 0.0, 5.0] # [m/s]
-    Ds::Sampleable = Normal(0,1.5)
+@with_kw struct ContinuumWorld <: Environment
+	size = [10, 10]                          # dimensions
+	terminal_centers = [[4.5,4.5],[6.5,7.5]] # obstacle and goal centers
+	terminal_radii = [0.5, 0.5]              # radius of obstacle and goal
+	directions = [[0,1],[0,-1],[-1,0],[1,0]] # up, down, left, right
 end
 
-# NominalTrajectoryDistribution on the environment (D.Ds)
-Ds(env::CollisionAvoidance, s, a) = env.Ds
+(env::ContinuumWorld)(s, a) = env(s, a, rand(Ds(env, s, a)))
 
-function (env::CollisionAvoidance)(s, a, x)
-    a = env.𝒜[a]
-
-    h, dh, a_prev, τ = s
-
-    h = h + dh
-
-    if a != 0.0
-        if abs(a - dh) < env.ddh_max
-            dh += a
-        else
-            dh += sign(a - dh) * env.ddh_max
-        end
-    end
-
-    a_prev = a
-    τ = max(τ - 1.0, -1.0)
-
-    return [h, dh + x, a_prev, τ]
+function (env::ContinuumWorld)(s, a, x)
+	dir = env.directions[a]
+	return s .+ dir
 end
 
-(env::CollisionAvoidance)(s, a) = env(s, a, rand(Ds(env, s, a)))
-
-# Initial state distribution
-Ps(env::CollisionAvoidance) = product_distribution(
-	Uniform(-100, 100),                # Initial h
-	Uniform(-10, 10),                  # Initial dh
-	DiscreteNonParametric([0], [1.0]), # Initial a_prev
-	DiscreteNonParametric([40], [1.0]) # Initial τ
-)
+Ps(env::ContinuumWorld) = Product([Uniform(0,1), Uniform(0,1)])
+Ds(env::ContinuumWorld, s, a) = Deterministic()
 
 ## Sensor
 struct IdealSensor <: Sensor end
@@ -797,241 +569,137 @@ Distributions.pdf(sensor::IdealSensor, s, xₛ) = 1.0
 ```
 """)
 
-# ╔═╡ 82d11960-a4b1-4e7e-9c7e-783351c9bcd5
-html_expand("Stuck? <span style='color: crimson'>Expand for hints</span>.", hint(md"""If you're trying fuzzing as a proposal distribution, the `disturbance_distribution` for the `LargeSystem` applies disturbances to the _environment_:
+# ╔═╡ b608b8b2-5166-419b-ac4e-18e87c93ac01
+md"""
+## Large system
+First we define a convenient struct that holds the parameters of the large system.
 
-```julia
-D = DisturbanceDistribution((o)->Deterministic(),
-							(s,a)->Normal(SOME_MEAN, SOME_STD),
-							(s)->Deterministic())
-```
-where
-```julia
-struct DisturbanceDistribution
-    Da # agent disturbance distribution
-    Ds # environment disturbance distribution
-    Do # sensor disturbance distribution
+$(highlight(md"May be useful when defining functions such as `sets` and `intervals`.
+
+Please do not change these values."))
+"""
+
+# ╔═╡ 05892ece-4c38-4c39-841a-f8b9333ba3ef
+@with_kw struct ContinuumWorldParameters
+	disturbance_mag = 0.1 # disturbance magnitude x = [𝒰(-mag, mag), 𝒰(-mag, mag)]
+	xmin = 0 # x initial state x minimum
+	xmax = 1 # x initial state x maximum
+	ymin = 0 # y initial state y minimum
+	ymax = 1 # y initial state y maximum
 end
-```
-See _Example 4.3_ in the textbook for how this is applied to the pendulum.
-"""))
-
 
 # ╔═╡ 7d054465-9f80-4dfb-9b5f-76c3977de7cd
-Markdown.parse("""
-## Large system
-An aircraft collision avoidance system that uses an interpolated lookup-table policy.
-""")
+md"""
+The continuum world system uses the neural network surrogate to predict next states.
+"""
+
+# ╔═╡ 005966cb-763d-4346-8fdb-e336a9514e8c
+md"""
+### Neural network surrogate 🤖
+We trained a 3 layer **ReLU-based** neural network to predict next states $\hat{s}'$ given the current state $s$.
+"""
+
+# ╔═╡ 94a5b84a-b942-4317-b255-f49cc13532c6
+hint(md"""Since we trained a **ReLU-based** network, what algorithms are _not_ applicable (i.e., not **sound**)?
+
+Think: _Is ReLU continuous and differentiable?_""", title="Hint: What can we apply?")
+
+# ╔═╡ 6a38fe32-d862-4d7d-9978-290a152ae575
+model = BSON.load("cw_model.bson")[:model]
 
 # ╔═╡ 1ec68a39-8de9-4fd3-be8a-26cf7706d1d6
 begin
-	local grid, Q = load_cas_policy(joinpath(@__DIR__, "cas_policy.bson"))
+	large_params = ContinuumWorldParameters()
 
-	cas_agent = InterpAgent(grid, Q)
-	cas_env = CollisionAvoidance(Ds=Normal(0, 1.5))
-	cas_sensor = IdealSensor()
-	sys_large = System(cas_agent, cas_env, cas_sensor)
+	local agent = NoAgent()
+	local env = ContinuumWorldSurrogate(
+		cw=ContinuumWorld(),
+		model=model,
+		disturbance_mag=large_params.disturbance_mag,
+	)
+	local sensor = IdealSensor()
 
-	LargeSystem::Type = typeof(sys_large) # Type used for multiple dispatch
-end
+	sys_large = System(agent, env, sensor)
+end;
+
+# ╔═╡ aa0c4ffc-d7f0-484e-a1e2-7f6f92a3a53d
+Markdown.MD(
+Markdown.parse("""
+# 3️⃣ **Large**: Continuum World
+The large system is an agent in the continuum world (continuous grid world).
+
+The objective is to get to the _green_ goal region and avoid the _red_ failure region.
+
+### (Original) Continuum World System
+To train our surrogate neural network, we define the "original" continuum world system that uses a lookup-based policy **which we cannot easily apply reachability to**.
+- States are the \$[x,y]\$ positions in a \$10\\times10\$ continuous world.
+    - With an initial state distribution uniformly in \$[0,1]\$ for both \$x\$ and \$y\$.
+- Actions \$a\$ are the cardinal directions `up`, `down`, `left`, `right`.
+    - It uses an interpolated lookup-table policy.
+- The transition dynamics apply the action \$a\$ to the current state.
+    - e.g., \$s' = s + a\$ where \$a \\in \\big\\{[0,1],\\, [0,-1],\\, [-1,0],\\, [1,0]\\big\\}\$
+- We do not apply disturbances to the original environment.
+
+### (Surrogate) Continuum World System
+- Same state space and initial state distribution as the original system.
+- The agent does not directly take actions, but instead will predict the next state \$\\hat{s}'\$ using the trained _**neural network surrogate**_.
+- Disturbances \$x\$ are applied to the predicted next state \$\\hat{s}'\$ as "slip" noise. The agent slips in a random direction modeled by adding a random vector \$x = [x_x, x_y]\$ sampled from two independent uniform distributions:
+\$\$
+\\begin{align}
+x_x &\\sim \\mathcal{U}(-$(large_params.disturbance_mag), $(large_params.disturbance_mag)) \\\\
+x_y &\\sim \\mathcal{U}(-$(large_params.disturbance_mag), $(large_params.disturbance_mag))
+\\end{align}\$\$
+- Thus, the transition dynamics apply the disturbances to the predicted next state:
+\$\$s' = \\hat{s}' + x\$\$
+
+_Modified from the system details in Appendix A.7._"""),
+    depth_highlight(sys_large)
+)
+
+# ╔═╡ 29279d51-1162-4fa8-bdd5-f0ff0e4ef968
+LargeSystem::Type = typeof(sys_large) # Type used for multiple dispatch
 
 # ╔═╡ 9f739929-1cd3-4935-b229-ae3aeac7e131
 begin
-	ThisProject = Project2
-
-	max_steps(sys::SmallSystem)  = 200
-	max_steps(sys::MediumSystem) = 10_000
-	max_steps(sys::LargeSystem)  = 200_000
-
-	num_seeds(sys::SmallSystem)  = 20
-	num_seeds(sys::MediumSystem) = 5
-	num_seeds(sys::LargeSystem)  = 3
+	ThisProject = Project3
+	max_vertices(sys::SmallSystem)  = 4
+	max_vertices(sys::MediumSystem) = Inf
+	max_vertices(sys::LargeSystem)  = Inf
 end;
 
 # ╔═╡ 60f72d30-ab80-11ef-3c20-270dbcdf0cc4
-Markdown.parse("""
-**Task**: Efficiently estimating the failure probability using \$n\$ total calls to the system `step` function.
-- **Small system**: 1D Gaussian \$\\mathcal{N}(0,1)\$: \$n=$(format(max_steps(sys_small); latex=true))\$ `step` calls and \$$(num_seeds(sys_small))\$ seeds.
-- **Medium system**: Swinging inverted pendulum: \$n=$(format(max_steps(sys_medium); latex=true))\$ `step` calls and \$$(num_seeds(sys_medium))\$ seeds.
-- **Large system**: Aircraft collision avoidance system (CAS): \$n=$(format(max_steps(sys_large); latex=true))\$ `step` calls and \$$(num_seeds(sys_large))\$ seeds.
-
-_(Same systems as Project 1)_
-
-Your job is to write the following function that returns the estimated failure probability:
-```julia
-estimate_probability(sys, ψ; n)::Float64
-```
-and get a better estimate of the failure probability than a random baseline.
-""")
-
-# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
-@tracked function estimate_probability_baseline(sys, ψ; n=max_steps(sys))
-	d = get_depth(sys)
-	m = n ÷ d                                  # Get num. rollouts (\div for ÷)
-	pτ = NominalTrajectoryDistribution(sys, d) # Nominal trajectory distribution
-	τs = [rollout(sys, pτ; d) for _ in 1:m]    # Rollout with pτ, m*d steps
-	return mean(isfailure.(ψ, τs))             # Frequentist estimate of P(fail)
-end
-
-# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
-function run_baseline(sys::System, ψ; seed=4)
-	Random.seed!(seed)
-	pfail = estimate_probability_baseline(sys, ψ)
-	n = stepcount()
-	d = get_depth(sys)
-	return (pfail=pfail, n=n, m=n÷d) # return these variables as a NamedTuple
-end
-
-# ╔═╡ c8c1a321-39c8-4a78-bbcf-13663243c457
 Markdown.MD(
 	Markdown.parse("""
-	### Baseline comparison
-	Unlike _Project 1_, in this project you will be given the same number of `step` calls as the baselines:
-	
-	\$\$\\begin{equation}
-	n_\\text{steps} = $(max_steps(sys_small)) \\tag{for the small system}
-	\\end{equation}\$\$
+**Task**: Estimating the reachable sets of three systems.
+- **Small system**: Mass-spring-damper (_**linear system**_).
+    - A maximum of \$n = $(format(max_vertices(sys_small); latex=true))\$ vertices per time step is allotted for the small system.
+- **Medium system**: Swinging inverted pendulum (_**nonlinear system**_).
+    - No restriction on number of vertices.
+- **Large system**: Continuum world (_**nonlinear neural network**_).
+    - No restriction on number of vertices.
+"""),
+highlight(md"""Your job is to write the following function that returns the estimated reachable sets for each time step from $1$ to depth $d$ (use `get_depth(sys)` to get `d`)."""),
+md"""
+```julia
+estimate_reachable_sets(sys, ψ)
+```
+##### Note on the return type:
 
-	Reminder that the number of `step` calls \$n\$ is equal to the number of rollouts \$m\$ for the small system because the rollout depth is \$d=1\$.
-	"""),
-	highlight(md"**Note**: To pass the tests, your $\hat{P}_\text{fail}$ estimate must be better than the baseline on average.")
-)
-
-# ╔═╡ db5c210a-e783-40bf-892d-58a9fe5dfb23
-Markdown.parse("""
-## Average performance
-Because most estimation algorithms are stochastic, we will test your implemented algorithms to get the average \$\\hat{P}_\\text{fail}\$ over \$K = $(num_seeds(sys_small))\$ _random number generator_ (RNG) seeds. Note this specific number of seeds is for the small system, please refer to the other sections for their prescribed number of seeds.
-
-_We will report the mean and standard deviation of your estimates._
-
-**Your mean estimate should be better than random.**
+The return type of `estimate_reachable_sets` should either be:
+- a [`UnionSet`](https://juliareach.github.io/LazySets.jl/dev/lib/lazy_operations/UnionSet) or [`UnionSetArray`](https://juliareach.github.io/LazySets.jl/dev/lib/lazy_operations/UnionSet/#def_UnionSetArray) (from `LazySets.jl`)
+    - **This is already the type that is output from the `reachable` algorithms in the textbook.**
+- or a `Vector{<:LazySet}` (see [docs](https://juliareach.github.io/LazySets.jl/dev/lib/interfaces/LazySet/#LazySets.LazySet) for the `LazySet` subtypes)
+   - If you want to run your own custom reachability code, we also accept a `Vector` of `LazySet`s for each time step.
 """)
 
-# ╔═╡ b60c518f-41bb-4abd-b573-d3f8d29f60de
-function aggregate_performance(alg::Function, sys, ψ; seeds=1:num_seeds(sys))
-	estimates = []
-	for seed in seeds
-		Random.seed!(seed)
-		pfail = alg(sys, ψ)
-		push!(estimates, pfail)
-	end
-	return estimates
-end
+# ╔═╡ c4fa9af9-1a79-43d7-9e8d-2854652a4ea2
+html_expand("Stuck on the linear system (small)? Expand for hints on what to try.", hint(Markdown.parse("""Check out the _set propagation_ techniques in section 8.2 of the textbook.
 
-# ╔═╡ 402c0eaa-727f-4c54-89ec-64c3dfb8002c
-fbaseline(sys,ψ,seeds) =
-	aggregate_performance(estimate_probability_baseline, sys, ψ; seeds);
-
-# ╔═╡ 782a2696-41a7-4bcf-8002-058d18d82840
-begin
-	baseline_μₘ, baseline_σₘ =
-		aggregate_performance(estimate_probability_baseline, sys_medium, ψ_medium);
-	
-	Markdown.parse("""
-	### Example aggregate performance for the baseline
-	The aggregate estimated failure probability using the Monte Carlo baseline is:
-	
-	\$\$\\begin{equation}
-	\\hat{P}_\\text{fail}^{(\\text{baseline})} \\approx $(baseline_μₘ) \\pm $(round(baseline_σₘ; sigdigits=4))
-	\\end{equation}\$\$
-	
-	_Note that we will test over different RNG seeds than those defaulted above._
-	""")
-end
+Being a linear system, we can solve the reachability problem _**exactly**_. But we restrict the maximum number of vertices per time step to be \$n = $(format(max_vertices(sys_small); latex=true))\$ to make it more interesting.""")))
 
 # ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
-## Cross entropy estimation
-begin
-	struct ImportanceSamplingEstimation
-	    p  # nominal distribution
-	    q  # proposal distribution
-	    m  # number of samples
-	end
-	
-	function estimate(alg::ImportanceSamplingEstimation, sys, ψ)
-	    p, q, m = alg.p, alg.q, alg.m
-	    τs = [rollout(sys, q) for i in 1:m]
-	    ps = [pdf(p, τ) for τ in τs]
-	    qs = [pdf(q, τ) for τ in τs]
-	    ws = ps ./ qs
-	    return mean(w * isfailure(ψ, τ) for (w, τ) in zip(ws, τs))
-	end
-
-	struct CrossEntropyEstimation
-	    p        # nominal trajectory distribution
-	    q₀       # initial proposal distribution
-	    f        # objective function f(τ, ψ)
-	    k_max    # number of iterations
-	    m        # number of samples per iteration
-	    m_elite  # number of elite samples
-	end
-	
-	function estimate(alg::CrossEntropyEstimation, sys::SmallSystem, ψ)
-	    k_max, m, m_elite = alg.k_max, alg.m, alg.m_elite
-	    p, q, f = alg.p, alg.q₀, alg.f
-		d = get_depth(sys)
-	    for _ in 1:k_max
-	        τs = [rollout(sys, q; d) for _ in 1:m]
-	        Y = [f(τ, ψ) for τ in τs]
-	        order = sortperm(Y)
-	        y = max(0, Y[order[m_elite]])
-	        ps = [pdf(p, τ) for τ in τs]
-	        qs = [pdf(q, τ) for τ in τs]
-	        ws = ps ./ qs
-	        ws[Y .> y] .= 0  ## set non-elite weights to zero
-	        q = fit(typeof(q), τs, ws=ws)
-	    end
-		println(" ")
-	    return estimate(ImportanceSamplingEstimation(p, q, m_IS), sys, ψ)
-	end
-
-	struct SmallProposalDistribution <: TrajectoryDistribution
-		μ
-		σ
-	end
-	
-	## Function disturbance_distribution() for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::SmallProposalDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	
-	function StanfordAA228V.initial_state_distribution(p::SmallProposalDistribution)
-		return Normal(p.μ, p.σ)
-	end
-
-	StanfordAA228V.depth(p::SmallProposalDistribution) = get_depth(sys_small)
-	
-	function Distributions.fit(::Type{SmallProposalDistribution}, samples::Vector; ws::Vector)
-	    xs = [τ[1].s for τ in samples] 
-	    p = fit(Normal, xs, ws)
-		println("μ = $(p.μ), σ = $(p.σ)")
-	    return SmallProposalDistribution(p.μ, p.σ)
-	end
-
-	m, m_elite, m_IS = 61, 5, 17  ## mean err = 0.005018
-	@small function estimate_probability(sys::SmallSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		ps = Ps(sys.env)
-		p = NominalTrajectoryDistribution(sys, d)
-		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
-		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
-		k_max = div(n-m_IS, m)
-		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
-	end
-end
-
-# ╔═╡ 466c6a8b-a3cf-42fe-998f-660d514798d6
-## Nov05: code explanation. Distributions.jl
-begin
-	println(fit(Normal, [1.0, 2.0, 3.0]))
-	local samples = [randn(3) for _ in 1:100]
-	## fits a multivariate Normal
-	println(fit(MvNormal, hcat(samples...)))  ## 3×100 matrix
+@small function estimate_reachable_sets(sys::SmallSystem, ψ; n=max_vertices(sys))
+	# TODO: WRITE YOUR CODE HERE
 end
 
 # ╔═╡ 307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
@@ -1039,148 +707,18 @@ Markdown.MD(
 	md"""
 $(@bind rerun_small LargeCheckBox(text="⟵ Click to re-run the <code>SmallSystem</code> evaluation."))""",
 	Markdown.parse("""
-	↑ This will re-run **`estimate_probability(::SmallSystem, ψ)`** and re-save **`$(get_filename(sys_small, ThisProject))`**
+	↑ This will re-run **`estimate_reachable_sets(::SmallSystem, ψ)`** and re-save **`$(get_filename(sys_small, ThisProject))`**
 
 	_Uncheck this to load results from the file._
 	""")
 )
-
-# ╔═╡ f3cf88ca-8569-4e42-a9fc-436637b82364
-Markdown.parse("""
-## Average performance
-The failure probability \$\\hat{P}_\\text{fail}\$ is averaged over \$$(num_seeds(sys_medium))\$ _random number generator_ (RNG) seeds.
-
-_We will report the mean and standard deviation of your estimates._
-
-**Your mean estimate should be better than random.**
-""")
-
-# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
-## Sequencial Monte Carlo estimation (particle filtering)
-begin
-	# using StatsBase
-	
-	## Metropolis-Hastings algorithm (MCMC)
-	struct MCMCSampling
-	    p̄       # target density
-	    g       # kernel: τ′ = rollout(sys, g(τ))
-	    τ       # initial trajectory
-	    k_max   # max iterations
-	    m_burnin    # number of samples to discard from burn-in
-	    m_skip      # number of samples to skip for thinning
-	end
-	
-	function sample_failures(alg::MCMCSampling, sys, ψ)
-	    p̄, g, τ = alg.p̄, alg.g, alg.τ
-	    k_max, m_burnin, m_skip = alg.k_max, alg.m_burnin, alg.m_skip
-	    τs = []
-	    for k in 1:k_max
-	        τ′ = rollout(sys, g(τ)) 
-	        if rand() < (p̄(τ′) * pdf(g(τ′), τ)) / (p̄(τ) * pdf(g(τ), τ′))
-	            τ = τ′
-	        end
-	        push!(τs, τ)
-	    end
-	    return τs[m_burnin:m_skip:end]
-	end
-
-	## Pendulum trajectory distribution
-	struct PendulumTrajectoryDistribution <: TrajectoryDistribution
-		μ₁  ## mean of initial state distribution
-		Σ₁  ## covariance of initial state distribution
-		μs  ## vector of sensor disturbance means, length d
-		Σs  ## vector of sensor disturbance covariance, length d
-	end
-	
-	function StanfordAA228V.initial_state_distribution(
-		p::PendulumTrajectoryDistribution)
-	    return MvNormal(p.μ₁, p.Σ₁)
-	end
-	
-	function StanfordAA228V.disturbance_distribution(
-		p::PendulumTrajectoryDistribution, t)
-	    D = DisturbanceDistribution((o)   -> Deterministic(),
-	                                (s,a) -> Deterministic(),
-	                                (s)   -> MvNormal(p.μs[t], p.Σs[t]))
-	    return D
-	end
-	
-	StanfordAA228V.depth(p::PendulumTrajectoryDistribution) = length(p.μs)
-
-	function inverted_pendulum_kernel(τ; Σ=0.05^2 * I) 
-		## sensor disturbance means and variances
-		μs, Σs = [step.x.xo for step in τ], [Σ for _ in τ]
-		return PendulumTrajectoryDistribution(τ[1].s, Σ, μs, Σs)
-	end
-
-	## system specific perturb function
-	function perturb(sys::MediumSystem, ψ, samples, ḡ)
-		new_samples = []
-	    for sample in samples
-			## p̄， g， τ， k_max， m_burnin， m_skip
-	        alg = MCMCSampling(ḡ, inverted_pendulum_kernel, sample,
-	                           k_max, m_burnin, m_skip)
-	        mcmc_samples = sample_failures(alg, sys, ψ)
-	        push!(new_samples, mcmc_samples[end])
-	    end
-	    return new_samples
-	end
-
-	function p̄failure_smooth(ψ, p, τ; ϵ=0.15)
-	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
-	    return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)
-	end
-	
-	struct SequentialMonteCarloEstimation
-	    p           # nominal trajectory distribution
-	    ḡs          # intermediate distributions
-	    perturb     # τs′ = perturb(τs, ḡ)
-	    m           # number of samples
-	end
-
-	function estimate(alg::SequentialMonteCarloEstimation, sys, ψ)
-	    p, ḡs, perturb, m = alg.p, alg.ḡs, alg.perturb, alg.m
-	    τs = [rollout(sys, p) for i in 1:m]
-	    ws = [ḡs[1](τ) / p(τ) for τ in τs]
-		# p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
-	 #    for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
-		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## ⚠️ No hard failure dist
-	        τs′ = perturb(sys, ψ, τs, ḡ)
-	        ws .*= [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs′]
-			println(ws[1:5])
-		    if sum(ws) > 0.0
-		        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)]  ## resample
-				# τs = sample(τs′, Weights(ws), m; replace=true) ## resample
-				ws .= mean(ws)
-		    else
-		        @warn "All weights are zero, skipping resampling"
-		    end
-	    end
-		println("👉 ", mean(ws))
-		println(" ")
-	    return mean(ws) 
-	end
-
-	k_max, m_burnin, m_skip = 5, 1, 1  ## perturb() ⚠️ 
-	@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		p = NominalTrajectoryDistribution(sys, d)
-		## Large ε (close to nominal) → small ε (close to hard failure)  
-		ϵs = [1.0, 0.5, 0.25, 0.19] ## ⚠️
-		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
-		m = 15 ## number of samples ⚠️
-		# return 0.00815588  ## true failure probability
-		return estimate(SequentialMonteCarloEstimation(p, ḡs, perturb, m), sys, ψ)
-	end
-end
 
 # ╔═╡ 38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
 Markdown.MD(
 	md"""
 $(@bind rerun_medium LargeCheckBox(text="⟵ Click to re-run the <code>MediumSystem</code> evaluation."))""",
 	Markdown.parse("""
-	↑ This will re-run **`estimate_probability(::MediumSystem, ψ)`** and re-save **`$(get_filename(sys_medium, ThisProject))`**
+	↑ This will run **`estimate_reachable_sets(::MediumSystem, ψ)`** and save **`$(get_filename(sys_medium, ThisProject))`**
 
 	_Uncheck this to load results from the file._
 	""")
@@ -1196,271 +734,257 @@ if directory_trigger
 	sleep(1)
 end
 
-# ╔═╡ aa0c4ffc-d7f0-484e-a1e2-7f6f92a3a53d
-Markdown.MD(
-	Markdown.parse("""
-	# 3️⃣ **Large**: Aircraft Collision Avoidance
-	The large system is an aircraft collision avoidance system (CAS).
-	- It uses an interpolated lookup-table policy.
-	- The state is comprised of the relative altitude (m) \$h\$, the relative vertical rate \$\\dot{h}\$ (m/s), the previous action \$a_\\text{prev}\$, and the time to closest point of approach \$t_\\text{col}\$ (sec): \$s = [h, \\dot{h}, a_\\text{prev}, t_\\text{col}]\$
-	- Actions are \$a \\in [-5, 0, 5]\$ vertical rate changes.
-	- Disturbances \$x\$ are applied to \$\\dot{h}\$ as environment noise: \$x \\sim \\mathcal{N}(0, 1.5)\$
-	- Finite horizon (i.e., rollout depth) of \$d=$(get_depth(sys_large))\$ for \$t_\\text{col}\$ from \$40-0\$ seconds.
-	"""),
-	depth_highlight(sys_large),
-	md"_(Same large system as Project 1)_"
-)
-
-# ╔═╡ d23f0299-981c-43b9-88f3-fb6e07927498
+# ╔═╡ 2a81d0a0-a609-4d20-bddb-e5cbe65caf4b
 md"""
-## Large environment
-The collision avoidance system has disturbances applied to the relative vertical rate variable $\dot{h}$ of the state (i.e., environment disturbances).
+### Training code
 
-$$\dot{h} + x \quad \text{where} \quad x \sim \mathcal{N}(0, 1.5)$$
+If you're interested in the `Flux.jl` training code, expand this section below.
 """
 
-# ╔═╡ 641b92a3-8ff2-4aed-8482-9fa686803b68
-cas_env.Ds
+# ╔═╡ 3ae14115-f7d6-495b-a3fa-d13d0b0cdd54
+html_expand("Expand for the <code>Flux</code> training code.", md"""
+You can use `CUDA` if your machine supports CUDA-based GPUs.
+
+```julia
+using Flux
+using Metal # Training on Apple silicon
+```
+
+We define the "original" system to collect data from:
+```julia
+local grid, Q = load_cw_policy(joinpath(@__DIR__, "cw_policy.bson"))
+
+cw_agent_orig = InterpAgent(grid, Q)
+cw_env_orig = ContinuumWorld()
+cw_sensor_orig = IdealSensor()
+sys_large_orig = System(cw_agent_orig, cw_env_orig, cw_sensor_orig)
+
+# Type used for multiple dispatch
+LargeSystemOriginal::Type = typeof(sys_large_orig)
+```
+
+For data collection, we collect $(s, s')$ pairs which consist of $s = [x,y]$ and $s' = [x', y']$ state values (using the original continuum world system).
+
+```julia
+function data_collection(sys::LargeSystemOriginal; n=100_000, seed=4)
+	Random.seed!(seed)
+	𝒟 = []
+	d = get_depth(sys)
+	for i in 1:n
+		τ = rollout(sys; d)
+		𝐬 = [deepcopy(step.s) for step in τ[1:end-1]]
+		𝐬′ = [deepcopy(step.s) for step in τ[2:end]]
+		push!(𝒟, collect(zip(𝐬, 𝐬′))...)
+	end
+	return 𝒟
+end
+```
+
+We train a simple 3 (hidden) layer ReLU-based neural network to predict next states $\hat{s}'$ given the current state $s$. We minimize the mean-squared error (MSE) loss function using the Adam optimizer with a learning rate of $\alpha = 5{e-}4$ for $100$ epochs.
+
+```julia
+function train(sys::LargeSystemOriginal; epochs=100, lr=5e-4, seed=4)
+	𝒟 = data_collection(sys; seed)
+	𝐬 = first.(𝒟)
+	𝐬′ = last.(𝒟)
+	inputs::Matrix{Float32} = hcat(first.(𝐬), last.(𝐬))'
+	targets::Matrix{Float32} = hcat(first.(𝐬′), last.(𝐬′))'
+	loader = Flux.DataLoader((inputs, targets), batchsize=length(𝐬)÷50)
+
+	Random.seed!(seed)
+
+	model = Chain(
+		Dense(2, 6, relu),
+		Dense(6, 6, relu),
+		Dense(6, 6, relu),
+		Dense(6, 2) # next state s′
+	)
+	model = gpu(model)
+	opt = Flux.setup(Flux.Adam(lr), model)
+
+	@withprogress for epoch in 1:epochs
+		for (s, s′) in loader
+			s, s′ = gpu(s), gpu(s′)
+			loss, grads = Flux.withgradient(model) do m
+				ŝ′ = m(s)
+				Flux.mse(ŝ′, s′)
+			end
+			Flux.update!(opt, model, grads[1])
+			@logprogress "[$epoch]\n$loss" epoch/epochs
+		end
+	end
+
+	model = cpu(model)
+	model = fmap(f64, model)
+	return model
+end
+```
+
+Then we run `train` and save the model.
+
+```julia
+model = train(sys_large_orig)
+BSON.@save "cw_model.bson" model
+```
+""")
 
 # ╔═╡ be426908-3fee-4ecd-b054-2497ce9a2e50
 md"""
 ## Large specification $\psi$
-The collision avoidance system specification $\psi$ indicates what the system should do:
+The continuum world specification $\psi$ indicates what the system should do:
 
-$$\psi(\tau) = \square_{[41]}\big(|h| > 50\big)$$
+$$\psi(\tau) = \lozenge(G) \wedge \square(\neg F)$$
 
-i.e., "the absolute valued relative altitude $h$ (first element of the state $s$) in the trajectory $\tau$ should _always_ ($\square$) be greater than $50$ meters at the end of the encounter ($t=41$), anything else is a failure."
+where
+
+$$\begin{gather}
+G(s_t): \lVert s_t - \text{goal} \rVert_2 \le r_g \tag{$s_t$ is in the goal region} \\
+F(s_t): \lVert s_t - \text{fail} \rVert_2 \le r_f \tag{$s_t$ is in the obstace region}
+\end{gather}$$
+
+where $r_g$ and $r_f$ are the goal region and obstacle region radii, respectively.
+
+i.e., "the agent must _eventually_ ($\lozenge$) reach the goal and _always_ ($\square$) avoid the obstace region."
 """
 
 # ╔═╡ 258e14c4-9a2d-4515-9a8f-8cd96f31a6ff
-ψ_large = LTLSpecification(@formula □(41:41, s->abs(s[1]) > 50));
-
-# ╔═╡ aee22151-51de-426b-8478-6a04284a4888
-Markdown.parse("""
-## Average performance
-The failure probability \$\\hat{P}_\\text{fail}\$ is averaged over \$$(num_seeds(sys_large))\$ _random number generator_ (RNG) seeds.
-
-_We will report the mean and standard deviation of your estimates._
-
-**Your mean estimate should be better than random.**
-""")
-
-# ╔═╡ c22f039c-d7bb-4f7f-9284-cf66906f6390
 begin
-	baseline_μₗ, baseline_σₗ =
-		aggregate_performance(estimate_probability_baseline, sys_large, ψ_large)	
-	
-	Markdown.parse("""
-	### Example aggregate performance for the baseline
-	The aggregate estimated failure probability using the Monte Carlo baseline is:
-	
-	\$\$\\begin{equation}
-	\\hat{P}_\\text{fail}^{(\\text{baseline})} \\approx $(baseline_μₗ) \\pm $(baseline_σₗ)
-	\\end{equation}\$\$
+	local goal = sys_large.env.cw.terminal_centers[2]
+	local fail = sys_large.env.cw.terminal_centers[1]
+	local rg = sys_large.env.cw.terminal_radii[2]
+	local rf = sys_large.env.cw.terminal_radii[1]
 
-	Notice the high standard deviation! This is because failures are extremely rare for the CAS problem.
+	local G = @formula s->norm(s .- goal) ≤ rg
+	local F = @formula s->norm(s .- fail) ≤ rf
 
-	_Note that we will test over different RNG seeds than those defaulted above._
-	""")
-end
+	ψ_large = LTLSpecification(@formula ◊(G) ∧ □(¬F))
+end;
 
 # ╔═╡ e3d6fdf1-3a9e-446b-8482-49d6f64b652e
 html_quarter_space()
 
 # ╔═╡ 23fd490a-74d2-44b4-8a12-ea1460d95f85
 Markdown.parse("""
-## ⟶ **Task (Large)**: Estimate failure probability
-Please fill in the following `estimate_probability` function.
+## ⟶ **Task (Large)**: Estimate the reachable set
+Please fill in the following `estimate_reachable_sets` function.
 """)
 
 # ╔═╡ 18a70925-3c2a-4317-8bbc-c2a096ec56d0
 start_code()
 
-# ╔═╡ 3df627c8-72a2-4e34-8109-4fa12f0b6e0d
-## Bridge sampling estimation
-begin
-	function bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
-	    ḡ₁s, ḡ₂s = ḡ₁.(g₁τs), ḡ₂.(g₂τs)
-	    ḡb₁s, ḡb₂s = ḡb.(g₁τs), ḡb.(g₂τs)
-	    return mean(ḡb₂s ./ ḡ₂s) / mean(ḡb₁s ./ ḡ₁s)
-	end
-	
-	function optimal_bridge(g₁τs, ḡ₁, g₂τs, ḡ₂, k_max)
-	    ratio = 1.0
-	    m₁, m₂ = length(g₁τs), length(g₂τs)
-		ḡb(τ) = (ḡ₁(τ) * ḡ₂(τ)) / (m₁ * ḡ₁(τ) + ratio * m₂ * ḡ₂(τ))
-	    for k in k_max
-	        ratio = bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
-	    end
-	    return ḡb
-	end
-
-	## CAS trajectory distribution
-	struct CASTrajectoryDistribution <: TrajectoryDistribution
-		h1
-		dh1
-		a_prev1
-		τ1
-		μs  ## vector of env disturbance means, length d
-		σs  ## vector of env disturbance deviations, length d
-	end
-	
-	function StanfordAA228V.initial_state_distribution(
-		p::CASTrajectoryDistribution)
-	    return product_distribution(
-	        Uniform(p.h1 - 1e-6, p.h1 + 1e-6),          ## Initial h
-	        Uniform(p.dh1 - 1e-6, p.dh1 + 1e-6),        ## Initial dh
-	        DiscreteNonParametric([p.a_prev1], [1.0]),  ## Initial a_prev
-	        DiscreteNonParametric([p.τ1], [1.0])        ## Initial τ
-		)
-	end
-	
-	function StanfordAA228V.disturbance_distribution(
-		p::CASTrajectoryDistribution, t)
-	    D = DisturbanceDistribution((o)   -> Deterministic(),
-	                                (s,a) -> Normal(p.μs[t], p.σs[t]),
-	                                (s)   -> Deterministic())
-	    return D
-	end
-	
-	StanfordAA228V.depth(p::CASTrajectoryDistribution) = length(p.μs)
-	
-	function cas_kernel(τ; σ=0.01) 
-		h1, dh1, a_prev1, τ1 = τ[1].s  ## Initial state components
-		## environment disturbance
-		μs, σs = [step.x.xs for step in τ], [σ for _ in τ]
-		return CASTrajectoryDistribution(h1, dh1, a_prev1, τ1, μs, σs)
-	end
-	
-	function perturb(sys::LargeSystem, ψ, samples, ḡ)
-		new_samples = []
-	    for sample in samples
-			## p̄， g， τ， k_max， m_burnin， m_skip
-	        alg = MCMCSampling(ḡ, cas_kernel, sample,
-	                           k_max, m_burnin, m_skip)
-	        mcmc_samples = sample_failures(alg, sys, ψ)
-	        push!(new_samples, mcmc_samples[end])
-	    end
-	    return new_samples
-	end
-	
-	struct BridgeSamplingEstimation
-	    p       # nominal trajectory distribution
-	    ḡs      # intermediate distributions
-	    perturb # τ′ = perturb(τ, ḡ′)
-	    m       # number of samples from each intermediate distribution
-	    kb      # number of iterations for estimating optimal bridge
-	end
-
-	function estimate(alg::BridgeSamplingEstimation, sys, ψ)
-	    p, ḡs, perturb, m, kb = alg.p, alg.ḡs, alg.perturb, alg.m, alg.kb
-	    p̄fail = 1.0
-		τs = [rollout(sys, p) for i in 1:m]
-		p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure distribution
-	    for (ḡ, ḡ′) in zip([p; ḡs...], [ḡs...; p̄failure])
-			# println("👉 ḡ -> $ḡ")
-			# for τ in τs
-			#     println("👉 ḡ′(τ) = ", ḡ′(τ), ", ḡ(τ) = ", ḡ(τ))
-			# end
-	        ws = [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs]
-		    if sum(ws) > 0.0
-		        τs′ = τs[rand(Categorical(ws ./ sum(ws)), m)]  ## resample
-		    else
-				τs′ = τs
-		        # @warn "All weights are zero or NaN, skipping resampling"
-		    end
-	        τs′ = perturb(sys, ψ, τs′, ḡ′)
-	        ḡb = optimal_bridge(τs′, ḡ′, τs, ḡ, kb)
-	        ratio = bridge_sampling_estimator(τs′, ḡ′, τs, ḡ, ḡb)
-	        p̄fail *= ratio
-	        τs = τs′
-	    end
-	    return p̄fail 
-	end
-
-	function p̄failure_smooth_large(ψ, p, τ; ϵ=0.15)
-	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
-		Δ = min(Δ, 10.0)
-		println("👉 logpdf(Normal(0, ϵ), Δ) = $(logpdf(Normal(0, ϵ), Δ))")
-		println("   logpdf(p, τ) = $(logpdf(p, τ))")
-	    # return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)   ## underflow problem
-		return logpdf(Normal(0, ϵ), Δ) + logpdf(p, τ)
-	end
-
-	@large function estimate_probability(sys::LargeSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		p = NominalTrajectoryDistribution(sys, d)
-		m, kb = 10, 10 ## ⚠️
-		ϵs = [1.0, 0.5, 0.2, 0.1, 0.01] ## ⚠️
-		ḡs = [τ -> p̄failure_smooth_large(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
-		# return 0.00018285333333333334  ## true failure probability
-		return estimate(BridgeSamplingEstimation(p, ḡs, perturb, m, kb), sys, ψ)
-	end
+# ╔═╡ 3471a623-16af-481a-8f66-5bd1e7890188
+@large function estimate_reachable_sets(sys::LargeSystem, ψ)
+	# TODO: WRITE YOUR CODE HERE
 end
 
 # ╔═╡ 4c5210d6-598f-4167-a6ee-93bceda7223b
 end_code()
 
-# ╔═╡ 6297f68d-dbd5-4270-b461-d7eb75d61cfd
-md"
-Nov05: code explanation  
+# ╔═╡ ef6bf2ba-748e-4f43-ad53-05d1936c2ba9
+
+
+# ╔═╡ 0a496e93-5853-46bd-a3c5-6f466df90441
+highlight(md"""
+We recommend adding `@progress` to for loops in the `reachable` algorithms, e.g.:
+
 ```julia
-# Initial state distribution
-Ps(env::CollisionAvoidance) = product_distribution(
-    Uniform(-100, 100),                # Initial h
-    Uniform(-10, 10),                  # Initial dh
-    DiscreteNonParametric([0], [1.0]), # Initial a_prev
-    DiscreteNonParametric([40], [1.0]) # Initial τ
-)
-## println(Ps(sys_large.env))
-Distributions.ProductDistribution{
-    1, 0,
-    Tuple{
-        Distributions.Uniform{Float64},
-        Distributions.Uniform{Float64},
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        },
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        }
-    },
-    Distributions.Continuous,
-    Float64
-}(
-    dists: (
-        Distributions.Uniform{Float64}(a = -100.0, b = 100.0),
-        Distributions.Uniform{Float64}(a = -10.0, b = 10.0),
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        }(support = [0], p = [1.0]),
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        }(support = [40], p = [1.0])
-    ),
-    size: (4,)
-)
-
-```  
-"
-
-# ╔═╡ 1428627e-be78-44be-a248-78254a988a52
-## Nov05: code explanation
-begin
-	p = NominalTrajectoryDistribution(sys_medium, get_depth(sys_medium))
-	println(rollout(sys_medium, p)[end])
-	p = NominalTrajectoryDistribution(sys_large, get_depth(sys_large))
-	println(rollout(sys_large, p)[20])
+@progress for d in 1:alg.h
+	# ...
 end
+```
 
-# ╔═╡ 2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
+This way you get incremental feedback that the algorithms are making progress.
+""")
+
+# ╔═╡ ba82b4e4-413c-4b78-a777-85d03e3554f4
+html_quarter_space()
+
+# ╔═╡ ba780732-7aaa-4e09-9c40-304aa62e564b
+html"""
+<h3 id='neural-verification'>(Optional) Not satisfied with your solution?</h3>
+<p>This <code>import</code> may be a spoiler 🙃</p>
+"""
+
+# ╔═╡ 8cc343cc-f5be-4ff4-802f-adcb6a77674a
+import NeuralVerification: Ai2, forward_network, network
+
+# ╔═╡ b4a0cef4-25f6-4b5d-a739-6f9583d6fb3d
+hint(md"""
+Although a simple application of _natural inclusion_ will pass the autograder, you may not be satisfied with this solution for the large problem.
+
+**Expand the section below for some hints on what else to try.**""")
+
+# ╔═╡ 16502371-5139-40de-be3e-0926f55ce405
+html_expand("Expand for a hints on a better solution to the large problem.", [
+	html"<h2hide><code>NeuralVerification.jl</code></h2hide>",
+	md"""
+	The `NeuralVerification.jl` package developed by our lab, SISL, has an extensive library of implemented state-of-the-art neural network verification algorithms.
+	- [Link to the documentation.](https://sisl.github.io/NeuralVerification.jl/latest/)
+
+	You can use this package to find a **sound** solution (unlike _Taylor inclusion_ and _conservative linearization_) and a better solution than _natural inclusion_.""",
+
+	html"<h2hide>Implement this!</h2hide>",
+	md"""
+	Copy the following function `nvreach` to a new cell and implement the comments `1-4` if you want to gain experience with state-of-the-art neural network verification!
+
+	```julia
+	function nvreach(sys::LargeSystem, d)
+		solver = Ai2()               # We recommend using the AI² solver (see [1])
+		net = network(sys.env.model) # Convert Flux model → NeuralVerification network
+		𝒮, 𝒳 = sets(sys, 1)          # Get initial state set 𝒮 and disturbance set 𝒳
+		ℛs = LazySet[𝒮]              # Initialze reachable sets w/ initial state set 𝒮
+	
+		@progress for t in 2:d
+			# TODO:
+			# 1. Forward pass 𝒮 through the net: forward_network(solver, net, 𝒮)
+			# 2. Then what? ... \oplus<TAB> may be useful...
+			# 3. Tip: concretize afterwards.
+			# 4. Push to ℛs
+		end
+	
+		return UnionSetArray([ℛs...])
+	end
+	```
+
+	Then call this function within your `estimate_reachable_sets(sys::LargeSystem, ψ)` like so:
+	```julia
+	d = get_depth(sys)
+	return nvreach(sys, d)
+	```
+
+	**(Or you can put the internals of `nvreach` directly into `estimate_reachable_sets`)**
+
+	If you're curious how to type certain variables used in the `nvreach` function, see the table below.
+
+	| Variable | How to produce it |
+	| :------- | :--------------------------------------------- |
+	| `𝒮`      | `\scrS<TAB>`                                   |
+	| `𝒮′`     | `\scrS<TAB>\prime<TAB>`                        |
+	| `𝒮′ ⊕ 𝒳` | `\scrS<TAB>\prime<TAB> \oplus<TAB> \scrX<TAB>` |
+	| `ℛs`     | `\scrR<TAB>s`                                  |
+	""",
+
+	html"<h2hide>AI² solver</h2hide>",
+	md"""
+	The `nvreach` function uses the AI² solver [^1], which is a state-of-the-art neural network verification algorithm that works on ReLU-based networks. For more technical details, please refer to the paper below.
+	- [Link to AI² paper.](https://www.cs.utexas.edu/~swarat/pubs/ai2.pdf)
+	- [Link to AI² `solve` functionality.](https://github.com/sisl/NeuralVerification.jl/blob/9802458c3055ecdae7ecdebd45f680f11af76c67/src/reachability/ai2.jl#L54)
+
+	[^1] T. Gehr, M. Mirman, D. Drashsler-Cohen, P. Tsankov, S. Chaudhuri, and M. Vechev, **"AI²: Safety and Robustness Certification of Neural Networks with Abstract Interpretation,"** in *2018 IEEE Symposium on Security and Privacy (SP)*, 2018.
+	""",
+	try LocalResource(joinpath(@__DIR__, "..", "media", "ai2.png")) catch end,
+
+	html"<h2hide>Wanna go further?</h2hide>",
+	hint(md"Maybe a little 🄿 🄰 🅁 🅃 🄸 🅃 🄸 🄾 🄽 🄸 🄽 🄶?"),
+])
+
+# ╔═╡ 5c490a85-cff5-46bb-a6fa-330c81d4cd3b
 html_quarter_space()
 
 # ╔═╡ ea2d7eb7-d576-415c-ac4c-fea7f90de637
 md"""
 # 📊 Large Test
-We'll automatically test your `estimate_probability(::LargeSystem, ψ)` function below.
+We'll automatically test your `estimate_reachable_sets(::LargeSystem, ψ)` function below.
 """
 
 # ╔═╡ 7fe1c3d7-469c-47d9-9d46-e5b8b263edb9
@@ -1468,14 +992,39 @@ Markdown.MD(
 	md"""
 $(@bind rerun_large LargeCheckBox(text="⟵ Click to re-run the <code>LargeSystem</code> evaluation."))""",
 	Markdown.parse("""
-	↑ This will re-run **`estimate_probability(::LargeSystem, ψ)`** and re-save **`$(get_filename(sys_large, ThisProject))`**
+	↑ This will re-run **`estimate_reachable_sets(::LargeSystem, ψ)`** and re-save **`$(get_filename(sys_large, ThisProject))`**
 
 	_Uncheck this to load results from the file._
 	""")
 )
 
+# ╔═╡ 571c8a87-fd6d-490d-8a54-ad76f35f0af4
+md""" $t =$ $(@bind t_large Slider(1:get_depth(sys_large), show_value=true))
+
+**Change the time $t$ slider to see the reachable set per time step.**"""
+
+# ╔═╡ a434dd23-c4d4-498c-9195-10a9c5813e35
+@bind fun LargeCheckBox(text="⟵ Click here for some fun! 🌈 🦄")
+
+# ╔═╡ b5b95a2e-1b81-4b4a-bf12-38041ff01059
+md"""
+## Passing test criteria
+Find a sequence of sets over time $t$ to depth $d$ that:
+1. Over approximates the reachable set (no limit on max vertices).
+2. The sets _may_ intersect with the failure region.
+    - Although, for better leaderboard scores you may want to avoid this.
+3. The sets must not be _under approximations_ of the approximately optimal reachable sets.
+"""
+
+# ╔═╡ d1443daa-4cd7-4258-be76-c8a4be9778a6
+if fun
+	cmap = palette(["#5ebd3e","#ffb900","#f78200","#e23838","#973999","#009cdf"])
+else
+	cmap = palette(reverse([get(cgrad(:viridis), i) for i in range(0.2, 0.8, 5)]))
+end;
+
 # ╔═╡ 74aeca7b-0658-427f-8c02-d093a0d725ee
-html_half_space()
+html_quarter_space()
 
 # ╔═╡ 6d5c805b-330c-4b04-a51c-15e674352b1b
 html_quarter_space()
@@ -1485,8 +1034,8 @@ html_quarter_space()
 
 # ╔═╡ 860ec509-3a86-4842-9471-6b1a0b8f366d
 Markdown.parse("""
-## Comparing failure probabilities
-Since the failure probabilities across the three problems vary widely in range, we weight the errors using the weights \$\\mathbf{w} = [$(𝐰[1]),$(𝐰[2]),$(𝐰[3])]\$ (normalized to sum to one):
+## Comparing reachable volumes
+Since the reachable volumes across the three problems vary widely in range, we weight the errors using the weights \$\\mathbf{w} = [$(𝐰[1]),$(𝐰[2]),$(𝐰[3])]\$ (normalized to sum to one):
 
 \$\$\\bar{w_i} = \\frac{w_i}{\\sum_j w_j}\$\$
 
@@ -1497,11 +1046,9 @@ md"""
 The final score on the leaderboard is then a weighted sum:
 
 $$\begin{gather}
-\mathbf{s} = \big[\text{err}_\text{small},\, \text{err}_\text{medium},\, \text{err}_\text{large} \big] \\
+\mathbf{s} = \big[\text{vol}_\text{small},\, \text{vol}_\text{medium},\, \text{vol}_\text{large} \big] \\
 \text{score} = \mathbf{w}^\top\mathbf{s}
 \end{gather}$$
-
-_The minimum possible score is $0$, **where smaller values are better.**_
 """
 
 # ╔═╡ 5c3d24f6-0106-444c-b7df-89bba8c01b37
@@ -1510,70 +1057,45 @@ function leaderboard_scores(𝐬, 𝐰=ones(length(τs)))
 	return 𝐰'𝐬
 end
 
-# ╔═╡ 16220c31-ce7d-4cd4-b66a-72527a7623b9
-Markdown.parse("""
-## True failure probabilities
-To generate the "true" failure probablities for the _medium_ and _large_ problems, we ran large-scale Monte Carlo simulations (using `estimate_probability_baseline` from the [Baseline](#baseline) section).
-- **Medium**: Ran using \$n = $(format(41*25_000_000; latex=true))\$ steps, i.e., \$m = $(format(25_000_000; latex=true))\$ rollouts.
-- **Large**: Ran using \$n = $(format(41*75_000_000; latex=true))\$ steps, i.e., \$m = $(format(75_000_000; latex=true))\$ rollouts.
-
-_This was run on an Ubuntu server with about `530 GB` of RAM over `127` cores._
-""")
-
 # ╔═╡ 4edc5933-9457-4c7c-8456-a26974e0587e
 html_half_space()
 
 # ╔═╡ 20cb2d9b-ad2d-4d06-be09-03bd5396687a
 begin
 	function task_description(sys, details)
-		return Markdown.parse(
+		if isinf(max_vertices(sys))
+			max_vertices_statement = "**Note**: No restrictions on the number of vertices"
+			n_arg = ""
+			spec = "a specification"
+		else
+			max_vertices_statement = "**Note**: \$n = $(format(max_vertices(sys); latex=true))\$ maximum number of vertices per time step"
+			n_arg = "; n"
+			spec = "an avoid-set specification"
+		end
+		max_vertices_highlight = highlight(Markdown.parse("$max_vertices_statement for the `$(system_name(sys))`."))
+
+		return Markdown.MD(
+			Markdown.parse(
 		"""
-			estimate_probability(sys::$(system_name(sys)), ψ; n)::Float64
+			estimate_reachable_sets(sys::$(system_name(sys)), ψ$n_arg)::LazySet
 		
-		A function that takes in a system `sys` ($details) and a specification `ψ` and **returns the estimate probability of failure**.
-		
-		- `n` = number of `step` calls allotted (\$n = $(format(max_steps(sys); latex=true))\$ for `$(system_name(sys))`)
-		
-		**Note**: `ψ` is written as `\\psi<TAB>`
+		A function that takes in a system `sys` ($details) and $spec `ψ` and **returns the overapproximated reachable set**.
+		"""),
+		max_vertices_highlight,
+		md"""		
+		**Note**: `ψ` is written as `\psi<TAB>`, `ℛ` is written as `\scrR<TAB>`
 		""")
 	end
-
-	mean_and_std(X::Vector) = (mean(X), std(X))
-end; md"> _Project 2 specific functions._"
-
-# ╔═╡ 66309827-bd01-417b-bf14-0240805139ca
-baseline_μₛ, baseline_σₛ = let
-	baseline_small =
-		aggregate_performance(estimate_probability_baseline, sys_small, ψ_small)
-	mean_and_std(baseline_small)
-end;
-
-# ╔═╡ aced4250-12be-41ca-8caf-bc660e2d629b
-Markdown.parse("""
-### Example aggregate performance for the baseline
-The aggregate estimated failure probability using the Monte Carlo baseline is:
-
-\$\$\\begin{equation}
-\\mathbb{E}_k\\left[\\hat{P}_\\text{fail}^{(\\text{baseline})}\\right] \\approx $(baseline_μₛ) \\pm $(round(baseline_σₛ; sigdigits=4))
-\\end{equation}\$\$
-
-where the _true_ probability of failure of the simple Gaussian system is:
-
-\$\$\\begin{equation}
-P_\\text{fail}^{(\\text{truth})} = $(cdf(ps_small, ψ_small.formula.ϕ.c))
-\\end{equation}\$\$
-
-_Note that we will test over \$K\$ different RNG seeds than those defaulted above._
-""")
+end; md"> _Project 3 specific functions._"
 
 # ╔═╡ d0a25025-9309-463f-a09a-9d7ea3df8143
-task_description(sys_small, "1D Gaussian for the _small_ setting")
+task_description(sys_small, "mass-spring-damper for the _small_ setting")
 
 # ╔═╡ f180bd3a-12da-4942-b2af-2df2f5887201
 task_description(sys_medium, "inverted pendulum for the _medium_ setting")
 
 # ╔═╡ 45c79345-89da-498c-9a98-2ad55a0a6114
-task_description(sys_large, "collision avoidance system for the _large_ setting")
+task_description(sys_large, "continuum world system for the _large_ setting")
 
 # ╔═╡ 247f4c17-bee1-4315-aff9-017407ef9219
 begin
@@ -1610,9 +1132,9 @@ end
 begin
 	extract(sys::System, input) = extract(sys.env, input)
 
-	function extract(env::SimpleGaussian, input)
-		s = input[1]             # Objective is simply over the initial state
-		𝐱 = [Disturbance(0,0,0)] # No disturbances for the SimpleGaussian
+	function extract(env::MassSpringDamper, x)
+		s = x[1:2]
+		𝐱 = [Disturbance(0, 0, x[i:i+1]) for i in 3:2:length(x)]
 		return s, 𝐱
 	end
 
@@ -1622,18 +1144,35 @@ begin
 		return s, 𝐱
 	end
 
-	function extract(env::CollisionAvoidance, x)
-		s = [x[1], x[2], 0, 40] # [h, ḣ, a_prev, t_col]
-		𝐱 = [Disturbance(0, x[i], 0) for i in 3:length(x)]
+	function extract(env::ContinuumWorldSurrogate, x)
+		s = x[1:2]
+		𝐱 = [Disturbance(0, x[i:i+1], 0) for i in 3:2:length(x)]
 		return s, 𝐱
 	end
 
-	initial_guess(sys::SmallSystem) = [0.0]
-	initial_guess(sys::MediumSystem) = zeros(84)
-	initial_guess(sys::LargeSystem) =
-		[rand(Normal(0,100)), 0, 0, 40, zeros(39)...]
+	md"> *Helper `extract` functions.*"
+end
 
-	md"> *Helper `extract` and `initial_guess` functions.*"
+# ╔═╡ 70e5bfca-7172-4f21-b3e6-e31ac16c4add
+begin
+	function sets(sys::Any, d::Any)
+		# Hey, you should define `sets` with the specific `sys` type, e.g.:
+		error("""Please define `sets(sys, d)` with the specific `sys` type:
+			sets(sys::MediumSystem, d)
+			sets(sys::LargeSystem, d)
+		""")
+	end
+
+
+	function intervals(sys::Any, d::Any)
+		# Hey, you should define `intervals` with the specific `sys` type, e.g.:
+		error("""Please define `intervals(sys, d)` with the specific `sys` type:
+			intervals(sys::MediumSystem, d)
+			intervals(sys::LargeSystem, d)
+		""")
+	end
+
+	md"> *Generic `sets` and `intervals` functions.*"
 end
 
 # ╔═╡ 6c8b3077-876e-42fd-aa47-f3fa7c37f4dd
@@ -1681,26 +1220,28 @@ begin
 	end
 end
 
+# ╔═╡ 851943ba-d6f8-4e97-bbcd-dec5eb8b8b76
+try let
+	msd = dark_mode ? "mass-spring-damper-dark.svg" : "mass-spring-damper.svg"
+	LocalResource(joinpath(@__DIR__, "..", "media", msd))
+end catch end
+
 # ╔═╡ daada216-11d4-4f8b-807c-d347130a3928
-try
-	if dark_mode
-		LocalResource(joinpath(@__DIR__, "..", "media", "inverted_pendulum_dark.svg"))
-	else
-		LocalResource(joinpath(@__DIR__, "..", "media", "inverted_pendulum.svg"))
-	end
-catch end
+try	LocalResource(joinpath(@__DIR__, "..", "media", dark_mode ? "inverted_pendulum_dark.svg" : "inverted_pendulum.svg")) catch end
+
+# ╔═╡ 7b3f2065-0521-4d89-8125-b9c09565d586
+try LocalResource(joinpath(@__DIR__, "..", "media", dark_mode ? "cw-neural-network-dark.svg" : "cw-neural-network.svg")) catch end
 
 # ╔═╡ 02fac8f9-b442-40d7-b3f3-415a10570e8e
 begin
 	DarkModeHandler.setdarkmode!(dark_mode)
 
 	import StanfordAA228V:
-		Always, Predicate, FlippedPredicate,
-		plot, plot!, plot_cdf, plot_pendulum,
-		plot_cas_lookahead, plot_pfail_histogram
+		plot, plot!, plot_pendulum, plot_optimal, 
+		plot_msd_time_axis, plot_msd_traj!,
+		plot_pendulum_state, plotsamples!, plotoutsiders!, plotset!,
+		plot_cw_full_reachability, plot_cw_reachability, plot_cw_trajectory!, ¬
 		# import plotting for dark_mode triggers
-
-	import StanfordAA228V.SignalTemporalLogic: ρ
 
 	function separator(rulecolor=dark_mode ? "#ffffff26" : "#00000026")
 		Markdown.parse("""# \${\\color{$rulecolor}\\rule{1000px}{3px}}\$""")
@@ -1710,16 +1251,16 @@ begin
 	md"> _AA228V/CS238V package management._"
 end
 
-# ╔═╡ 8469fe70-8cf6-43c1-b16b-d4b970a2c807
+# ╔═╡ 3e392ff6-6a32-49cc-9eab-82ae2d6e9154
 separator()
 
-# ╔═╡ a6ac99ee-2894-40d4-8dd5-35d551a0a041
+# ╔═╡ c498c964-9c36-4859-9b43-c203f5aa3390
 separator()
 
-# ╔═╡ fa762985-56eb-4ea4-9c91-95731bf6a475
+# ╔═╡ 87c29996-943e-43c8-9a85-9f90689a63ae
 separator()
 
-# ╔═╡ 5b1d8594-dd10-44f3-accf-d5060f75c1c8
+# ╔═╡ 6bffdf52-4c8d-464e-acad-ec21d528bdbd
 separator()
 
 # ╔═╡ 95e3d42f-b33f-4294-81c5-f34a300dc9b4
@@ -1745,12 +1286,20 @@ begin
 	global UsingThisViolatesTheHonorCode = @load ThisProject.backend
 	Div = UsingThisViolatesTheHonorCode.Div
 	divcenter = UsingThisViolatesTheHonorCode.divcenter
-	create_specification = UsingThisViolatesTheHonorCode.create_specification
-	ψ2latex = UsingThisViolatesTheHonorCode.ψ2latex
-	rerun = UsingThisViolatesTheHonorCode.rerun
-	rerun_multiple = UsingThisViolatesTheHonorCode.rerun_multiple
-	run_baseline_mlf = UsingThisViolatesTheHonorCode.run_baseline_mlf
-	run_aggregate_baseline = UsingThisViolatesTheHonorCode.run_aggregate_baseline
+	centered = UsingThisViolatesTheHonorCode.centered
+
+	small_system_linear_reachability =
+		UsingThisViolatesTheHonorCode.small_system_linear_reachability
+	ℛ_small_optimal = small_system_linear_reachability(sys_small)
+	𝐫_optimal = extract_set(ℛ_small_optimal)
+	check_volume = UsingThisViolatesTheHonorCode.check_volume
+	test = UsingThisViolatesTheHonorCode.test
+
+	ℛmax_small = UsingThisViolatesTheHonorCode.ℛmax_small
+	ℛmax_medium = UsingThisViolatesTheHonorCode.ℛmax_medium
+	ℛmax_large = UsingThisViolatesTheHonorCode.ℛmax_large
+
+	ℛ_small_optimal_over_time = convex_hull.(concretize.(fan_sets(ℛ_small_optimal)));
 
 	md"""
 	# Backend
@@ -1758,118 +1307,50 @@ begin
 	"""
 end
 
-# ╔═╡ e86d260f-c93d-4561-a9f1-44e4c7af827e
-Div(plot(sys_small, ψ_small); style=divcenter)
-
-# ╔═╡ a607813d-c76c-4a5a-9474-a1d8588b671b
-Div(plot(
-	begin
-		plot(sys_small, ψ_cdf)
-		plot!(legend=:best,
-			  title="Probability density function",
-			  titlefontsize=10)
-	end,
-	begin
-		plot_cdf(sys_small, ψ_cdf)
-		plot!(legend=:best,
-			  ylabel="\$P(s < c)\$",
-			  title="Cumulative distribution function",
-			  titlefontsize=10)
-	end; size=(800,200), margin=4Plots.mm); style=divcenter)
-
-# ╔═╡ fe7f4a79-1a63-4272-a776-358a309c8550
+# ╔═╡ 0e7aa498-3009-4473-a9a7-687cc0835ee4
 begin
-	function baseline_trajectories(sys, ψ; n=max_steps(sys), seed=4)
-		Random.seed!(seed)
-		d = get_depth(sys)
-		m = n ÷ d                                  # Get num. rollouts (\div for ÷)
-		pτ = NominalTrajectoryDistribution(sys, d) # Nominal trajectory distribution
-		return [rollout(sys, pτ; d) for _ in 1:m]  # Rollout with pτ, m*d steps
-	end
-
-	baseline_small_results = run_baseline(sys_small, ψ_small);
-
-	let τs = baseline_trajectories(sys_small, ψ_small)
-		Div(begin
-			plot(sys_small, ψ_small, τs)
-			title!("States from Monte Carlo baseline")
-		end; style=divcenter)
-	end
-end
-
-# ╔═╡ 73da2a56-8991-4484-bcde-7d397214e552
-Markdown.parse("""
-### Baseline results (small)
-
-The Monte Carlo estimate with \$n_\\text{step}\$ of \$$(max_steps(sys_small))\$ is:
-
-\$\$\\begin{gather}
-\\hat{P}_\\text{fail} = \\frac{$(Int(baseline_small_results.pfail*baseline_small_results.m))}{$(baseline_small_results.m)} = $(round(baseline_small_results.pfail, digits=5))\\tag{failure probability estimate}
-\\end{gather}\$\$
-This can be interpreted from the following plot as:
-
-\$\\frac{\\text{number of }\\, {\\color{red}\\bullet}\\, \\text{ states}}{\\text{number of }\\, {\\color{red}\\bullet}\\, \\text{ states} + \\text{number of }\\, {\\color{forestgreen}\\bullet}\\, \\text{ states}}\$
-
-_Where in the small problem, trajectories consist of a single state (because \$d = $(get_depth(sys_small))\$)._
-""")
-
-# ╔═╡ b21ab60c-df7b-4847-8325-8e9850dfb92d
-baseline_small = run_aggregate_baseline(sys_small, ψ_small);
-
-# ╔═╡ beaec161-ad89-4f83-9066-f420a1d04d39
-rerun(sys_small, ψ_small;
-	  save=false, f=estimate_probability_small,
-	  baseline=baseline_small,
-	  project=ThisProject,
-	  latextras=ψ2latex(sys_small, ψ_small))[3]
-
-# ╔═╡ c7c8277a-3846-41df-aba2-40c2a7bf5806
-baseline_small_different = run_aggregate_baseline(sys_small, ψ_small_different);
-
-# ╔═╡ c524297f-2bf3-4dd2-b7b4-fc5ce9a81738
-begin
-	rerun(sys_small, ψ_small_different;
-	      f=estimate_probability_small,
-		  baseline=baseline_small_different,
-		  project=ThisProject,
-		  latextras=ψ2latex(sys_small, ψ_small_different),
-		  save=false)[3]
-end
-
-# ╔═╡ 052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
-begin
-	rerun_rand_small # trigger
-	ψ_small_rand = create_specification()
-
-	md"""
-	## Random failure threshold
-	In most cases, we don't know the _failure distribution_. If we did, we could just sample from it!
+	ℛ_small = test(sys_small, ψ_small, estimate_reachable_sets_small;
+				   rerun=rerun_small, project=ThisProject);
+	global τs_small = missing
+	global issound_small = missing
+	global outsiders_small = missing
+	Random.seed!(0)
+	local d = get_depth(sys_small)
+	global τs_small = [rollout(sys_small, d=d+1) for i in 1:300]
 	
-	In this test, we make sure that your algorithm is robust to random failure thresholds.
-	"""
-end
+	try
+		global issound_small, outsiders_small =
+			precompute_soundness_and_outsiders(sys_small, ℛ_small, τs_small)
+	catch end
+end;
 
-# ╔═╡ c102a82b-6a21-4beb-a0bc-f1093b74ae10
-baseline_small_rand = run_aggregate_baseline(sys_small, ψ_small_rand);
-
-# ╔═╡ 61173ec6-c7d6-44fa-8c47-5f7295dd49cf
+# ╔═╡ 9cbf5fa3-664f-418e-a791-124276d9ae24
 begin
-	rand_𝐏ₛ, _, rand_logₛ, _ = rerun(sys_small, ψ_small_rand;
-	      f=estimate_probability_small,
-		  baseline=baseline_small_rand,
-		  project=ThisProject,
-		  latextras=ψ2latex(sys_small, ψ_small_rand),
-		  save=false)
-	rand_logₛ
-end
+	global small_timestamp = 0
+	try
+		ℛ_small
+		global small_timestamp = time() # Trigger for re-saving
+	catch end
+end;
 
 # ╔═╡ d0a3770a-2c48-42db-9a71-6b7f695f22d8
 begin
-	𝐏_small, log_small, pass_small, error_small = rerun_multiple(sys_small;
-		f=estimate_probability_small,
-		run=rerun_small,
-		fbaseline,
-		project=ThisProject)
+	global pass_small = false
+	global log_small = nothing
+	global vol_small = Inf
+
+	Δt_small = abs(time() - small_timestamp)
+	global pass_small, log_small, vol_small =
+		check_volume(sys_small, ψ_small, ℛ_small;
+			ℛ_optimal=ℛ_small_optimal,
+			ℛ_optimal_over_time=ℛ_small_optimal_over_time,
+			t=t_small,
+			reran=rerun_small,
+			τs=τs_small,
+			issound=issound_small,
+			outsiders=outsiders_small,
+			save=(Δt_small ≤ 1 && rerun_small),
+			project=ThisProject)
 	log_small
 end
 
@@ -1884,48 +1365,53 @@ begin
 	
 	Markdown.MD(HTML("<h2 id='graded-test'>$(pass ? "✅" : "❌") Graded small test ($(pass ? "$(ThisProject.points_small)/$(ThisProject.points_small)" : "0/$(ThisProject.points_small)") points)</h2>"),
 		md"""
-	✳️ **If the following tests pass, then you're finished with the small problem.**
-	
-	We'll test multiple failure thresholds in the specification $\psi$. Make sure the above 'randon test' works well across different failure thresholds to ensure this will pass.""")
+	If the following test passes, then you're finished with the small problem.
+	""")
 end
 
-# ╔═╡ 44c8fbe0-21e7-482b-84a9-c3d32a4737dd
+# ╔═╡ b3a79f6d-6d36-4371-a346-607f819d0fe4
 begin
-	baseline_medium_results = run_baseline(sys_medium, ψ_medium; seed=1);
+	ℛ_medium = test(sys_medium, ψ_medium, estimate_reachable_sets_medium;
+				    ℛmax=ℛmax_medium, rerun=rerun_medium, project=ThisProject);
 
-	let τs = baseline_trajectories(sys_medium, ψ_medium; seed=1)
-		Div(begin
-			plot(sys_medium, ψ_medium, τs; max_lines=max_steps(sys_medium)÷get_depth(sys_medium), max_lines_include_failure=true)
-		end; style=divcenter)
-	end
-end
+	global τs_medium = missing
+	global issound_medium = missing
+	global outsiders_medium = missing
 
-# ╔═╡ 0915d3d3-1557-44e6-875b-d9fa6ab6bba1
-Markdown.parse("""
-## Baseline: Medium
+	Random.seed!(4)
+	local d = get_depth(sys_medium)
+	global τs_medium = [rollout(sys_medium, d=d) for i in 1:1000]
 
-The Monte Carlo baseline estimate with \$n_\\text{step}\$ of \$$(format(max_steps(sys_medium); latex=true))\$ which equates to \$\\lfloor{n/d}\\rfloor = $(max_steps(sys_medium)÷get_depth(sys_medium))\$ rollouts is:
+	try
+		global issound_medium, outsiders_medium =
+			precompute_soundness_and_outsiders(sys_medium, ℛ_medium, τs_medium)
+	catch end
+end;
 
-\$\$\\begin{gather}
-\\hat{P}_\\text{fail} = \\frac{$(Int(baseline_medium_results.pfail*baseline_medium_results.m))}{$(baseline_medium_results.m)} = $(round(baseline_medium_results.pfail, digits=5))\\tag{failure probability estimate}
-\\end{gather}\$\$
-This can be interpreted from the following plot as:
-
-\$\\frac{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories}}{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories} + \\text{number of }\\, {\\color{forestgreen}━}\\, \\text{ trajectories}}\$
-
-""")
-
-# ╔═╡ a1701563-1528-4aac-b7be-bbbb56de374b
-baseline_medium = run_aggregate_baseline(sys_medium, ψ_medium);
-
-# ╔═╡ b417e370-efae-40e8-9247-5daf14fcc749
+# ╔═╡ f0b7fd4f-2a76-4329-93d8-91d789c3445c
 begin
-	𝐏_medium, counts_medium, log_medium, pass_medium, error_medium =
-		rerun(sys_medium, ψ_medium;
-			  f=estimate_probability_medium,
-			  baseline=baseline_medium,
-			  project=ThisProject,
-			  run=rerun_medium)
+	global medium_timestamp = 0
+	try
+		ℛ_medium
+		global medium_timestamp = time() # Trigger for re-saving
+	catch end
+end;
+
+# ╔═╡ 7cb60134-6377-4522-8232-6765e2f1f725
+begin
+	global pass_medium = false
+	global log_medium = nothing
+	global vol_medium = Inf	
+	Δt_medium = abs(time() - medium_timestamp)
+	global pass_medium, log_medium, vol_medium =
+		check_volume(sys_medium, ψ_medium, ℛ_medium;
+			t=t_medium, reran=rerun_medium,
+			save=(Δt_medium ≤ 1 && rerun_medium),
+			ℛmax=ℛmax_medium,
+			τs=τs_medium,
+			issound=issound_medium,
+			outsiders=outsiders_medium,
+			project=ThisProject)
 	log_medium
 end
 
@@ -1942,45 +1428,50 @@ begin
 	""")
 end
 
-# ╔═╡ 08cdfc42-06c6-4d27-a846-4a0a0809c174
-begin
-	baseline_large_results = run_baseline(sys_large, ψ_large; seed=1);
-
-	let τs = baseline_trajectories(sys_large, ψ_large; seed=1)
-		max_lines = 150
-		Markdown.MD(
-			Div(plot(sys_large, ψ_large, τs; max_lines=150); style=divcenter),
-			Markdown.parse("_Note we are only plotting \$$max_lines\$ lines out of the \$$(max_steps(sys_large)÷get_depth(sys_large))\$._")
-		)
-	end
-end
-
-# ╔═╡ f55000b4-ca33-46a7-a776-c3249aa70355
-Markdown.parse("""
-## Baseline: Large
-
-The Monte Carlo baseline with \$n_\\text{step}\$ of \$$(format(max_steps(sys_large); latex=true))\$ which equates to \$\\lfloor{n/d}\\rfloor = $(max_steps(sys_large)÷get_depth(sys_large))\$ rollouts is:
-
-\$\$\\begin{gather}
-\\hat{P}_\\text{fail} = \\frac{$(round(Int, baseline_large_results.pfail*baseline_large_results.m))}{$(baseline_large_results.m)} = $(round(baseline_large_results.pfail, digits=5))\\tag{failure probability estimate}
-\\end{gather}\$\$
-This can be interpreted from the following plot as:
-
-\$\\frac{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories}}{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories} + \\text{number of }\\, {\\color{forestgreen}━}\\, \\text{ trajectories}}\$
-
-""")
-
-# ╔═╡ 101ab5bc-00f4-4acd-b8b4-f8164d7cb030
-baseline_large = run_aggregate_baseline(sys_large, ψ_large);
-
 # ╔═╡ f6eb6d1a-a9a0-4234-8699-269a92f666c0
 begin
-	𝐏_large, counts_large, log_large, pass_large, error_large =
-		rerun(sys_large, ψ_large;
-			  f=estimate_probability_large,
-			  baseline=baseline_large,
-			  project=ThisProject,
-			  run=rerun_large)
+	ℛ_large = test(sys_large, ψ_large, estimate_reachable_sets_large;
+				    ℛmax=ℛmax_large, rerun=rerun_large, project=ThisProject);
+
+	global τs_large = missing
+	global issound_large = missing
+	global outsiders_large = missing
+	Random.seed!(4)
+	local d = get_depth(sys_large)
+	global τs_large = [rollout(sys_large, d=d) for i in 1:1000]
+
+	try
+		global issound_large, outsiders_large =
+			precompute_soundness_and_outsiders(sys_large, ℛ_large, τs_large)
+	catch end
+end;
+
+# ╔═╡ 685ead39-822e-4207-9832-940da6a13de8
+begin
+	global large_timestamp = 0
+	try
+		ℛ_large
+		global large_timestamp = time() # Trigger for re-saving
+	catch end
+end;
+
+# ╔═╡ 28ba58b2-7cae-4d41-8898-307ba09c5fda
+begin
+	global pass_large = false
+	global log_large = nothing
+	global vol_large = Inf	
+
+	Δt_large = abs(time() - large_timestamp)
+	global pass_large, log_large, vol_large =
+		check_volume(sys_large, ψ_large, ℛ_large;
+			t=t_large, reran=rerun_large,
+			save=(Δt_large ≤ 1 && rerun_large),
+			ℛmax=ℛmax_large,
+			cmap=cmap,
+			τs=τs_large,
+			issound=issound_large,
+			outsiders=outsiders_large,
+			project=ThisProject)
 	log_large
 end
 
@@ -1998,8 +1489,15 @@ begin
 end
 
 # ╔═╡ dbd088d1-f4c9-4e6a-b280-960b06da76e4
-Markdown.MD(Markdown.parse("# $(all([pass_small, pass_medium, pass_large]) ? "✅" : "❌") Final Check"),
-@mdx("""If the following test indicator is <span style='color:#759466'><b>green</b></span>, you can submit to Gradescope."""))
+begin
+	local passes = falses(3)
+	try
+		passes = [pass_small, pass_medium, pass_large]
+	catch end
+
+	Markdown.MD(Markdown.parse("# $(all(passes) ? "✅" : "❌") Final Check"),
+	@mdx("""If the following test indicator is <span style='color:#759466'><b>green</b></span>, you can submit to Gradescope."""))
+end
 
 # ╔═╡ 1bb92755-65e3-457e-84cd-252eae5e4d7e
 if all([pass_small, pass_medium, pass_large])
@@ -2031,26 +1529,105 @@ end
 
 # ╔═╡ d9ab8278-eb76-4a36-aa0e-4ec74704f5e0
 begin
-	global user_score = -Inf	
+	infinity = 1e228
+
+	function check_inf(score)
+		if isinf(score) || score == infinity
+			infinity, infinity
+		else
+			score, rd(score)
+		end
+	end
+
+	global volume_small = volume_small_rd = "—"
 	try
-		global user_score =
-			leaderboard_scores([error_small, error_medium, error_large], 𝐰)
+		global volume_small, volume_small_rd = check_inf(vol_small)
+	catch end
+
+	global volume_medium = volume_medium_rd = "—"
+	try
+		global volume_medium, volume_medium_rd = check_inf(vol_medium)
+	catch end
+
+	global volume_large = volume_large_rd = "—"
+	try
+		global volume_large, volume_large_rd = check_inf(vol_large)
+	catch end
+
+	global user_score = user_score_rd = "—"
+	try
+		global user_score, user_score_rd = 
+			check_inf(leaderboard_scores(
+				[volume_small, volume_medium, volume_large], 𝐰))
 	catch end
 
 	Markdown.parse("""
 # Leaderboard
-If the above tests pass, then you will receive full credit for your submission on Gradescope under the **`"Project $(ThisProject.project_num) (.val files + .jl file)"`** assignment.
+If the above tests pass, then you will receive full credit for your submission on Gradescope under the **`"Project $(ThisProject.project_num) (.val files + .jl files)"`** assignment.
 
-_However_, we have a leaderboard so that students can participate in a friendly competition to find the best estimate of the failure probability for each problem.
+_However_, we have a leaderboard so that students can participate in a friendly competition to find the best estimated volume of the reachable set for each problem.
 	
 ## Leaderboard entry
 Your leaderboard entry on Gradescope should look something like this (smaller is better):
 
-| Rank | Submission Name | Score | 𝔼[err(small)] | err(medium) | err(large) |
-| :--: | :-------------: | :---: | :-----------: | :------------: | :-----------: |
-| —    | $(guess_username()) | $(rd(user_score)) | $(rd(error_small)) | $(rd(error_medium)) | $(rd(error_large)) |
+| Rank | Submission Name | Score | vol(small) | vol(medium) | vol(large) |
+| :--: | :-------------: | :---: | :--------: | :---------: | :--------: |
+| —    | $(guess_username()) | $user_score_rd | $volume_small_rd | $volume_medium_rd | $volume_large_rd |
+
+_**Note**, we will show \$$infinity\$ in place of \$\\infty\$ when a test failed._ 
 """)
 end
+
+# ╔═╡ 98cbe931-d362-4039-97ba-41e0049619a3
+begin
+	msd_gif_name = dark_mode ? "msd-dark.gif" : "msd.gif"
+
+	if false
+		local d = get_depth(sys_small)
+		local msd_fps = 10
+		local msd_repeat = msd_fps # Repeat last frame x times
+
+		msd_anim_T = 1:d
+		msd_anim_T = vcat(msd_anim_T, fill(msd_anim_T[end], msd_repeat))
+
+		Random.seed!(0)
+		local τs = [rollout(sys_small, d=d) for _ in 1:300]
+
+		msd_anim = @withprogress name="gif" begin
+			@animate for (i,t) in enumerate(msd_anim_T)
+				plot_optimal(sys_small, ψ_small, ℛ_small_optimal, legend=false)
+				plot!(𝐫_optimal[t];
+					color=StanfordAA228V.PASTEL_SKY_BLUE,
+					mark=false,
+					lc=StanfordAA228V.PASTEL_SKY_BLUE,
+					lw=2,
+					linealpha=0.5,
+					fillalpha=0.05)
+				scatter!([τ[t].s[1] for τ in τs], [τ[t].s[2] for τ in τs];
+					ms=2,
+					color=StanfordAA228V.PASTEL_SKY_BLUE,
+					msc=StanfordAA228V.PASTEL_SKY_BLUE,
+					label=false)
+				
+				plt_set = plot!(title="\$t = $t\$", size=(700,350), dpi=400)
+			
+				plt_msd_time = plot_msd_time_axis(sys_small, ψ_small; flip=false)
+				plot_msd_traj!(sys_small, ψ_small, τs[2][1:t]; lw=2, flip=false)
+				plot!(title="\$t = $t \\ ($(rpad(round(0.05(t-1); digits=4), 4, '0')) \\ s)\$", size=(700,350), dpi=400)
+				
+				plot(plt_set, plt_msd_time, layout=(1,2))
+				@logprogress i/length(msd_anim_T)
+			end
+		end
+
+		gif(msd_anim, joinpath(@__DIR__, "..", "media", msd_gif_name); fps=msd_fps, show_msg=false)
+	end
+
+	md"> _Mass-spring-damper animated GIF._"
+end
+
+# ╔═╡ 86f9b1ae-d17f-4084-999a-28598ddc2846
+try LocalResource(joinpath(@__DIR__, "..", "media", msd_gif_name)) catch end
 
 # ╔═╡ 5563f0da-7552-4879-a38a-ba1748d39d52
 begin
@@ -2070,7 +1647,7 @@ begin
 					dpi=400,
 				)
 			end
-
+	
 			gif(pendulum_anim, joinpath(@__DIR__, "..", "media", pendulum_gif_name); fps=15, show_msg=false)
 		end
 	end
@@ -2081,50 +1658,69 @@ end
 # ╔═╡ 4ea18122-b681-4de1-89e3-5fb7ce2f7a0b
 try LocalResource(joinpath(@__DIR__, "..", "media", pendulum_gif_name)) catch end
 
-# ╔═╡ 98cbe931-d362-4039-97ba-41e0049619a3
+# ╔═╡ 41c6a7e9-48d6-4b87-94a2-f11a6adca655
 begin
-	cas_la_gif_name = dark_mode ? "cas-lookahead-dark.gif" : "cas-lookahead.gif"
-	cas_la_fps = 15
-	cas_la_repeat = cas_la_fps # Repeat last frame x times
-	cas_n_lookahead = 1000
+	cw_gif_name = dark_mode ? "cw-dark.gif" : "cw.gif"
 
 	if false
-		cas_la_anim_T = 1:get_depth(sys_large)
-		cas_la_anim_T = vcat(cas_la_anim_T, fill(cas_la_anim_T[end], cas_la_repeat))
-		cas_la_anim_τ = baseline_large_results_mlf.τ
-		cas_la_anim_τs_lookaheads, cas_la_anim_pfails, cas_la_anim_pfails_var =
-			precompute_cas_lookaheads(sys_large, ψ_large, cas_la_anim_τ;
-									  n_lookahead=cas_n_lookahead,
-									  show_progress=true)
-		cas_la_anim = @withprogress name="gif" begin
-			@animate for (i,t) in enumerate(cas_la_anim_T)
-				plot_cas_lookahead(sys_large, ψ_large;
-					τ=cas_la_anim_τ, τs=cas_la_anim_τs_lookaheads,
-					pfails=cas_la_anim_pfails, pfails_var=cas_la_anim_pfails_var,
-					t=t, max_lines=cas_n_lookahead, fα=0.5, sα=0.05)
-				@logprogress i/length(cas_la_anim_T)
+		let
+			cw_time_multiplier = 10
+			cw_fps = 3
+			cw_repeat = cw_fps # Repeat last frame x times
+
+			d = get_depth(sys_large)
+			cw_anim_T = 1:d
+			cw_anim_T = vcat(cw_anim_T, fill(cw_anim_T[end], cw_repeat))
+
+			Random.seed!(4)
+			τs = [rollout(sys_large; d=get_depth(sys_large)) for _ in 1:2000];
+
+			traj_color = dark_mode ? :white : :black
+			traj_stroke_color = dark_mode ? :black : :white
+			τi = 7
+
+			cw_anim = @withprogress name="gif" begin
+				@animate for (i,t) in enumerate(cw_anim_T)
+					plot(sys_large, ψ_large)
+
+					for tt in 1:t
+						c = get(cmap, ((tt-1) % length(cmap)) / (length(cmap) - 1))
+						scatter!([τ[tt].s[1] for τ in τs], [τ[tt].s[2] for τ in τs];
+							ms=1,
+							msw=0.1,
+							color=c,
+							msc=:white,
+							alpha=tt < t ? 0.025 : 1,
+							label=false)
+					end
+			
+					plot!(map(step->step.s[1], τs[τi][1:t]), map(step->step.s[2], τs[τi][1:t]); lw=4, color=traj_stroke_color, label=false)
+				
+					plot!(map(step->step.s[1], τs[τi][1:t]), map(step->step.s[2], τs[τi][1:t]); lw=2, color=traj_color, label=false)
+
+					scatter!(map(step->step.s[1], τs[τi][1:1]), map(step->step.s[2], τs[τi][1:1]); mark=:square, color=traj_color, msc=traj_stroke_color, label=false)
+					
+					plot!(size=(650,400), xlims=(0, 10), ylims=(0, 10), dpi=400)
+
+					@logprogress i/length(cw_anim_T)
+				end
 			end
+	
+			gif(cw_anim, joinpath(@__DIR__, "..", "media", cw_gif_name); fps=cw_fps, show_msg=false)
 		end
-		
-		gif(cas_la_anim, joinpath(@__DIR__, "..", "media", cas_la_gif_name); fps=cas_la_fps, show_msg=false)
 	end
 
-	md"> _Collision avoidance lookahead animated GIF._"
+	md"> _Continuum world animated GIF._"
 end
 
-# ╔═╡ e189b31e-7e24-4c32-989f-3e600a44d4bc
-try LocalResource(joinpath(@__DIR__, "..", "media", cas_la_gif_name)) catch end
-
-# ╔═╡ f8ea2983-c2d0-40ea-b949-9fc478ea45f8
-Markdown.parse("""
-The figure above shows the _state depended_ failure probability over \$$(cas_n_lookahead)\$ lookahead trajectories.
-""")
+# ╔═╡ 505c504a-6ce6-474e-9220-95702f909c01
+try LocalResource(joinpath(@__DIR__, "..", "media", cw_gif_name)) catch end
 
 # ╔═╡ 97042a5e-9691-493f-802e-2262f2da4627
 Markdown.MD(notebook_style(), md"> _Notebook styling._")
 
 # ╔═╡ 9865ed62-b4fd-4e49-9259-3e5997c589f3
-Markdown.MD(button_style(rerun_rand_small), md"> _Button styling._")
+Markdown.MD(button_style([]), md"> _Button styling._")
 
 # ╔═╡ ef084fea-bf4d-48d9-9c84-8cc1dd98f2d7
 Markdown.MD(TableOfContents(), md"> _Table of contents._")
@@ -2136,16 +1732,21 @@ BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GridInterpolations = "bb4c363b-b914-514b-8517-4eb369bc008a"
+IntervalArithmetic = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+LazySets = "b4f0291d-fe17-52bc-9479-3d1a343d9043"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MarkdownLiteral = "736d6165-7244-6769-4267-6b50796e6954"
-Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+NeuralVerification = "146f25fa-00e7-11e9-3ae5-fdbac6e12fa7"
 Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
+SCS = "c946c3f1-0d1f-5ce8-9dea-7daa1f7e2d13"
 StanfordAA228V = "6f6e590e-f8c2-4a21-9268-94576b9fb3b1"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
@@ -2153,39 +1754,29 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [compat]
 BSON = "~0.3.9"
 Distributions = "~0.25.117"
+Flux = "~0.16.3"
+ForwardDiff = "~0.10.38"
 GridInterpolations = "~1.2.1"
+IntervalArithmetic = "~0.21.2"
+JuMP = "~1.24.0"
+LazySets = "~2.14.2"
 MarkdownLiteral = "~0.1.1"
-Optim = "~1.10.0"
+NeuralVerification = "~0.1.0"
 Parameters = "~0.12.3"
 Plots = "~1.40.9"
-PlutoUI = "~0.7.60"
+PlutoUI = "~0.7.61"
 ProgressLogging = "~0.1.4"
-ReverseDiff = "~1.15.3"
-StanfordAA228V = "~0.1.16"
+SCS = "~2.0.2"
+StanfordAA228V = "~0.1.25"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.5"
+julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "91538048e08f7fd4297122351360ee0fbc7dca09"
-
-[[deps.ADTypes]]
-git-tree-sha1 = "e2478490447631aedba0823d4d7a80b2cc8cdb32"
-uuid = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
-version = "1.14.0"
-
-    [deps.ADTypes.extensions]
-    ADTypesChainRulesCoreExt = "ChainRulesCore"
-    ADTypesConstructionBaseExt = "ConstructionBase"
-    ADTypesEnzymeCoreExt = "EnzymeCore"
-
-    [deps.ADTypes.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
-    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
+project_hash = "f07f3a35640580db3fbbd09b4a3984a1ab668d8c"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -2204,15 +1795,39 @@ git-tree-sha1 = "6e1d2a35f2f90a4bc7c2ed98079b2ba09c35b83a"
 uuid = "6e696c72-6542-2067-7265-42206c756150"
 version = "1.3.2"
 
+[[deps.Accessors]]
+deps = ["CompositionsBase", "ConstructionBase", "Dates", "InverseFunctions", "MacroTools"]
+git-tree-sha1 = "0ba8f4c1f06707985ffb4804fdad1bf97b233897"
+uuid = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
+version = "0.1.41"
+
+    [deps.Accessors.extensions]
+    AxisKeysExt = "AxisKeys"
+    IntervalSetsExt = "IntervalSets"
+    LinearAlgebraExt = "LinearAlgebra"
+    StaticArraysExt = "StaticArrays"
+    StructArraysExt = "StructArrays"
+    TestExt = "Test"
+    UnitfulExt = "Unitful"
+
+    [deps.Accessors.weakdeps]
+    AxisKeys = "94b1ba4f-4ee9-5380-92f1-94cde586c3c5"
+    IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
+    LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+    Requires = "ae029012-a4dd-5104-9daa-d747884805df"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+    StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+    Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+    Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
-git-tree-sha1 = "f7817e2e585aa6d924fd714df1e2a84be7896c60"
+git-tree-sha1 = "50c3c56a52972d78e8be9fd135bfb91c9574c140"
 uuid = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
-version = "4.3.0"
-weakdeps = ["SparseArrays", "StaticArrays"]
+version = "4.1.1"
+weakdeps = ["StaticArrays"]
 
     [deps.Adapt.extensions]
-    AdaptSparseArraysExt = "SparseArrays"
     AdaptStaticArraysExt = "StaticArrays"
 
 [[deps.AliasTables]]
@@ -2221,15 +1836,20 @@ git-tree-sha1 = "9876e1e164b144ca45e9e3198d0b689cadfed9ff"
 uuid = "66dad0bd-aa9a-41b7-9441-69ab47430ed8"
 version = "1.1.3"
 
+[[deps.ArgCheck]]
+git-tree-sha1 = "680b3b8759bd4c54052ada14e52355ab69e07876"
+uuid = "dce04be8-c92d-5529-be00-80e4d2c0e197"
+version = "2.4.0"
+
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
 version = "1.1.2"
 
 [[deps.ArrayInterface]]
 deps = ["Adapt", "LinearAlgebra"]
-git-tree-sha1 = "bebb10cd3f0796dd1429ba61e43990ba391186e9"
+git-tree-sha1 = "017fcb757f8e921fb44ee063a7aafe5f89b86dd1"
 uuid = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
-version = "7.18.1"
+version = "7.18.0"
 
     [deps.ArrayInterface.extensions]
     ArrayInterfaceBandedMatricesExt = "BandedMatrices"
@@ -2263,9 +1883,9 @@ version = "1.11.0"
 
 [[deps.Atomix]]
 deps = ["UnsafeAtomics"]
-git-tree-sha1 = "b5bb4dc6248fde467be2a863eb8452993e74d402"
+git-tree-sha1 = "93da6c8228993b0052e358ad592ee7c1eccaa639"
 uuid = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
-version = "1.1.1"
+version = "1.1.0"
 
     [deps.Atomix.extensions]
     AtomixCUDAExt = "CUDA"
@@ -2290,9 +1910,36 @@ git-tree-sha1 = "4c3e506685c527ac6a54ccc0c8c76fd6f91b42fb"
 uuid = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
 version = "0.3.9"
 
+[[deps.BangBang]]
+deps = ["Accessors", "ConstructionBase", "InitialValues", "LinearAlgebra", "Requires"]
+git-tree-sha1 = "e2144b631226d9eeab2d746ca8880b7ccff504ae"
+uuid = "198e06fe-97b7-11e9-32a5-e1d131e6ad66"
+version = "0.4.3"
+
+    [deps.BangBang.extensions]
+    BangBangChainRulesCoreExt = "ChainRulesCore"
+    BangBangDataFramesExt = "DataFrames"
+    BangBangStaticArraysExt = "StaticArrays"
+    BangBangStructArraysExt = "StructArrays"
+    BangBangTablesExt = "Tables"
+    BangBangTypedTablesExt = "TypedTables"
+
+    [deps.BangBang.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+    StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+    Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+    TypedTables = "9d95f2ec-7b3d-5a63-8d20-e2491e220bb9"
+
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 version = "1.11.0"
+
+[[deps.Baselet]]
+git-tree-sha1 = "aebf55e6d7795e02ca500a689d326ac979aaf89e"
+uuid = "9718e550-a3fa-408a-8086-8db961cd8217"
+version = "0.1.1"
 
 [[deps.BenchmarkTools]]
 deps = ["Compat", "JSON", "Logging", "Printf", "Profile", "Statistics", "UUIDs"]
@@ -2311,6 +1958,12 @@ git-tree-sha1 = "1b96ea4a01afe0ea4090c5c8039690672dd13f2e"
 uuid = "6e34b625-4abd-537c-b88f-471c36dfa7a0"
 version = "1.0.9+0"
 
+[[deps.CDDLib]]
+deps = ["LinearAlgebra", "MathOptInterface", "Polyhedra", "SparseArrays", "cddlib_jll"]
+git-tree-sha1 = "7fdd7e50b551f7884f753390c6eeb6ff422ee066"
+uuid = "3391f64e-dcde-5f30-b752-e11513730f60"
+version = "0.10.0"
+
 [[deps.CEnum]]
 git-tree-sha1 = "389ad5c84de1ae7cf0e28e381131c98ea87d54fc"
 uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
@@ -2318,9 +1971,9 @@ version = "0.5.0"
 
 [[deps.CRlibm]]
 deps = ["CRlibm_jll"]
-git-tree-sha1 = "66188d9d103b92b6cd705214242e27f5737a1e5e"
+git-tree-sha1 = "32abd86e3c2025db5172aa182b982debed519834"
 uuid = "96374032-68de-5a5b-8d9e-752f78720389"
-version = "1.0.2"
+version = "1.0.1"
 
 [[deps.CRlibm_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -2330,15 +1983,15 @@ version = "1.0.1+0"
 
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "2ac646d71d0d24b44f3f8c84da8c9f4d70fb67df"
+git-tree-sha1 = "009060c9a6168704143100f36ab08f06c2af4642"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
-version = "1.18.4+0"
+version = "1.18.2+1"
 
 [[deps.ChainRules]]
 deps = ["Adapt", "ChainRulesCore", "Compat", "Distributed", "GPUArraysCore", "IrrationalConstants", "LinearAlgebra", "Random", "RealDot", "SparseArrays", "SparseInverseSubset", "Statistics", "StructArrays", "SuiteSparse"]
-git-tree-sha1 = "a975ae558af61a2a48720a6271661bf2621e0f4e"
+git-tree-sha1 = "4312d7869590fab4a4f789e97bd82f0a04eaaa05"
 uuid = "082447d4-558c-5d27-93f4-14fc19e9eca2"
-version = "1.72.3"
+version = "1.72.2"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra"]
@@ -2391,10 +2044,10 @@ uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.13.0"
 
 [[deps.CommonMark]]
-deps = ["PrecompileTools"]
-git-tree-sha1 = "351d6f4eaf273b753001b2de4dffb8279b100769"
+deps = ["Crayons", "PrecompileTools"]
+git-tree-sha1 = "3faae67b8899797592335832fccf4b3c80bb04fa"
 uuid = "a80b9123-70ca-4bc0-993e-6e3bcb318db6"
-version = "0.9.1"
+version = "0.8.15"
 
 [[deps.CommonSubexpressions]]
 deps = ["MacroTools"]
@@ -2416,6 +2069,15 @@ weakdeps = ["Dates", "LinearAlgebra"]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
 version = "1.1.1+0"
+
+[[deps.CompositionsBase]]
+git-tree-sha1 = "802bb88cd69dfd1509f6670416bd4434015693ad"
+uuid = "a33af91c-f02d-484b-be07-31d278c5ca2b"
+version = "0.1.2"
+weakdeps = ["InverseFunctions"]
+
+    [deps.CompositionsBase.extensions]
+    CompositionsBaseInverseFunctionsExt = "InverseFunctions"
 
 [[deps.ConcurrentUtilities]]
 deps = ["Serialization", "Sockets"]
@@ -2444,10 +2106,21 @@ version = "1.5.8"
     LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
     StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
+[[deps.ContextVariablesX]]
+deps = ["Compat", "Logging", "UUIDs"]
+git-tree-sha1 = "25cc3803f1030ab855e383129dcd3dc294e322cc"
+uuid = "6add18c4-b38d-439d-96f6-d6bc489c04c5"
+version = "0.1.3"
+
 [[deps.Contour]]
 git-tree-sha1 = "439e35b0b36e2e5881738abc8857bd92ad6ff9a8"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
 version = "0.6.3"
+
+[[deps.Crayons]]
+git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
+uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
+version = "4.1.1"
 
 [[deps.DataAPI]]
 git-tree-sha1 = "abe83f3a2f1b857aac70ef8b269080af17764bbe"
@@ -2456,9 +2129,9 @@ version = "1.16.0"
 
 [[deps.DataStructures]]
 deps = ["Compat", "InteractiveUtils", "OrderedCollections"]
-git-tree-sha1 = "4e1fe97fdaed23e9dc21d4d664bea76b65fc50a0"
+git-tree-sha1 = "1d0a14036acb104d9e89698bd408f63ab58cdc82"
 uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.18.22"
+version = "0.18.20"
 
 [[deps.DataValueInterfaces]]
 git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
@@ -2472,9 +2145,14 @@ version = "1.11.0"
 
 [[deps.Dbus_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "473e9afc9cf30814eb67ffa5f2db7df82c3ad9fd"
+git-tree-sha1 = "fc173b380865f70627d7dd1190dc2fce6cc105af"
 uuid = "ee1fde0b-3d02-5ea6-8484-8dfef6360eab"
-version = "1.16.2+0"
+version = "1.14.10+0"
+
+[[deps.DefineSingletons]]
+git-tree-sha1 = "0fba8b706d0178b4dc7fd44a96a92382c9065c2c"
+uuid = "244e2a9f-e319-4986-a169-4d1fe445cd52"
+version = "0.1.2"
 
 [[deps.DelimitedFiles]]
 deps = ["Mmap"]
@@ -2494,56 +2172,6 @@ git-tree-sha1 = "23163d55f885173722d1e4cf0f6110cdbaf7e272"
 uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
 version = "1.15.1"
 
-[[deps.DifferentiationInterface]]
-deps = ["ADTypes", "LinearAlgebra"]
-git-tree-sha1 = "aa87a743e3778d35a950b76fbd2ae64f810a2bb3"
-uuid = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
-version = "0.6.52"
-
-    [deps.DifferentiationInterface.extensions]
-    DifferentiationInterfaceChainRulesCoreExt = "ChainRulesCore"
-    DifferentiationInterfaceDiffractorExt = "Diffractor"
-    DifferentiationInterfaceEnzymeExt = ["EnzymeCore", "Enzyme"]
-    DifferentiationInterfaceFastDifferentiationExt = "FastDifferentiation"
-    DifferentiationInterfaceFiniteDiffExt = "FiniteDiff"
-    DifferentiationInterfaceFiniteDifferencesExt = "FiniteDifferences"
-    DifferentiationInterfaceForwardDiffExt = ["ForwardDiff", "DiffResults"]
-    DifferentiationInterfaceGPUArraysCoreExt = "GPUArraysCore"
-    DifferentiationInterfaceGTPSAExt = "GTPSA"
-    DifferentiationInterfaceMooncakeExt = "Mooncake"
-    DifferentiationInterfacePolyesterForwardDiffExt = ["PolyesterForwardDiff", "ForwardDiff", "DiffResults"]
-    DifferentiationInterfaceReverseDiffExt = ["ReverseDiff", "DiffResults"]
-    DifferentiationInterfaceSparseArraysExt = "SparseArrays"
-    DifferentiationInterfaceSparseConnectivityTracerExt = "SparseConnectivityTracer"
-    DifferentiationInterfaceSparseMatrixColoringsExt = "SparseMatrixColorings"
-    DifferentiationInterfaceStaticArraysExt = "StaticArrays"
-    DifferentiationInterfaceSymbolicsExt = "Symbolics"
-    DifferentiationInterfaceTrackerExt = "Tracker"
-    DifferentiationInterfaceZygoteExt = ["Zygote", "ForwardDiff"]
-
-    [deps.DifferentiationInterface.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    DiffResults = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
-    Diffractor = "9f5e2b26-1114-432f-b630-d3fe2085c51c"
-    Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
-    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
-    FastDifferentiation = "eb9bf01b-bf85-4b60-bf87-ee5de06c00be"
-    FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
-    FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
-    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-    GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
-    GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
-    Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
-    PolyesterForwardDiff = "98d1487c-24ca-40b6-b7ab-df2af84e126b"
-    ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
-    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
-    SparseConnectivityTracer = "9f842d2f-2579-4b1d-911e-f412cf18a3f5"
-    SparseMatrixColorings = "0a514795-09f3-496d-8182-132a7b665d35"
-    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
-    Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
-    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
-    Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
-
 [[deps.Distances]]
 deps = ["LinearAlgebra", "Statistics", "StatsAPI"]
 git-tree-sha1 = "c7e3a542b999843086e2f29dac96a618c105be1d"
@@ -2562,9 +2190,9 @@ version = "1.11.0"
 
 [[deps.Distributions]]
 deps = ["AliasTables", "FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SpecialFunctions", "Statistics", "StatsAPI", "StatsBase", "StatsFuns"]
-git-tree-sha1 = "6d8b535fd38293bc54b88455465a1386f8ac1c3c"
+git-tree-sha1 = "03aa5d44647eaec98e1920635cdfed5d5560a8b9"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.119"
+version = "0.25.117"
 
     [deps.Distributions.extensions]
     DistributionsChainRulesCoreExt = "ChainRulesCore"
@@ -2577,9 +2205,10 @@ version = "0.25.119"
     Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [[deps.DocStringExtensions]]
-git-tree-sha1 = "e7b7e6f178525d17c720ab9c081e4ef04429f860"
+deps = ["LibGit2"]
+git-tree-sha1 = "2fb1e02f2b635d0845df5d7c167fec4dd739b00d"
 uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
-version = "0.9.4"
+version = "0.9.3"
 
 [[deps.Downloads]]
 deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
@@ -2587,9 +2216,18 @@ uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 version = "1.6.0"
 
 [[deps.EnumX]]
-git-tree-sha1 = "bddad79635af6aec424f53ed8aad5d7555dc6f00"
+git-tree-sha1 = "bdb1942cd4c45e3c678fd11569d5cccd80976237"
 uuid = "4e289a0a-7415-4d19-859d-a7e5c4648b56"
-version = "1.0.5"
+version = "1.0.4"
+
+[[deps.EnzymeCore]]
+git-tree-sha1 = "0cdb7af5c39e92d78a0ee8d0a447d32f7593137e"
+uuid = "f151be2c-9106-41f4-ab19-57ee4f262869"
+version = "0.8.8"
+weakdeps = ["Adapt"]
+
+    [deps.EnzymeCore.extensions]
+    AdaptExt = "Adapt"
 
 [[deps.EpollShim_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -2620,9 +2258,9 @@ uuid = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
 version = "0.1.10"
 
 [[deps.ExpressionExplorer]]
-git-tree-sha1 = "4a8c0a9eebf807ac42f0f6de758e60a20be25ffb"
+git-tree-sha1 = "71d0768dd78ad62d3582091bf338d98af8bbda67"
 uuid = "21656369-7473-754a-2065-74616d696c43"
-version = "1.1.3"
+version = "1.1.1"
 
 [[deps.ExproniconLite]]
 git-tree-sha1 = "c13f0b150373771b0fdc1713c97860f8df12e6c2"
@@ -2640,6 +2278,18 @@ deps = ["Artifacts", "Bzip2_jll", "FreeType2_jll", "FriBidi_jll", "JLLWrappers",
 git-tree-sha1 = "466d45dc38e15794ec7d5d63ec03d776a9aff36e"
 uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 version = "4.4.4+1"
+
+[[deps.FLoops]]
+deps = ["BangBang", "Compat", "FLoopsBase", "InitialValues", "JuliaVariables", "MLStyle", "Serialization", "Setfield", "Transducers"]
+git-tree-sha1 = "0a2e5873e9a5f54abb06418d57a8df689336a660"
+uuid = "cc61a311-1640-44b5-9fba-1b764f453329"
+version = "0.2.2"
+
+[[deps.FLoopsBase]]
+deps = ["ContextVariablesX"]
+git-tree-sha1 = "656f7a6859be8673bf1f35da5670246b923964f7"
+uuid = "b9860ae5-e623-471e-878b-f6a53c775ea6"
+version = "0.1.1"
 
 [[deps.FastRounding]]
 deps = ["ErrorfreeArithmetic", "LinearAlgebra"]
@@ -2687,11 +2337,33 @@ git-tree-sha1 = "05882d6995ae5c12bb5f36dd2ed3f61c98cbb172"
 uuid = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
 version = "0.8.5"
 
+[[deps.Flux]]
+deps = ["Adapt", "ChainRulesCore", "Compat", "EnzymeCore", "Functors", "LinearAlgebra", "MLDataDevices", "MLUtils", "MacroTools", "NNlib", "OneHotArrays", "Optimisers", "Preferences", "ProgressLogging", "Random", "Reexport", "Setfield", "SparseArrays", "SpecialFunctions", "Statistics", "Zygote"]
+git-tree-sha1 = "49d213a90b159c74e9fc2b53162b5f699b6f3516"
+uuid = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+version = "0.16.3"
+
+    [deps.Flux.extensions]
+    FluxAMDGPUExt = "AMDGPU"
+    FluxCUDAExt = "CUDA"
+    FluxCUDAcuDNNExt = ["CUDA", "cuDNN"]
+    FluxEnzymeExt = "Enzyme"
+    FluxMPIExt = "MPI"
+    FluxMPINCCLExt = ["CUDA", "MPI", "NCCL"]
+
+    [deps.Flux.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+    MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+    NCCL = "3fe64909-d7a1-4096-9b7d-7a0f12cf0f6b"
+    cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
+
 [[deps.Fontconfig_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Expat_jll", "FreeType2_jll", "JLLWrappers", "Libdl", "Libuuid_jll", "Zlib_jll"]
-git-tree-sha1 = "301b5d5d731a0654825f1f2e906990f7141a106b"
+git-tree-sha1 = "21fac3c77d7b5a9fc03b0ec503aa1a6392c34d2b"
 uuid = "a3f928ae-7b40-5064-980b-68af3947d34b"
-version = "2.16.0+0"
+version = "2.15.0+0"
 
 [[deps.Format]]
 git-tree-sha1 = "9c68794ef81b08086aeb32eeaf33531668d5f5fc"
@@ -2710,25 +2382,32 @@ weakdeps = ["StaticArrays"]
 
 [[deps.FreeType2_jll]]
 deps = ["Artifacts", "Bzip2_jll", "JLLWrappers", "Libdl", "Zlib_jll"]
-git-tree-sha1 = "2c5512e11c791d1baed2049c5652441b28fc6a31"
+git-tree-sha1 = "786e968a8d2fb167f2e4880baba62e0e26bd8e4e"
 uuid = "d7e528f0-a631-5988-bf34-fe36492bcfd7"
-version = "2.13.4+0"
+version = "2.13.3+1"
 
 [[deps.FriBidi_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "7a214fdac5ed5f59a22c2d9a885a16da1c74bbc7"
+git-tree-sha1 = "846f7026a9decf3679419122b49f8a1fdb48d2d5"
 uuid = "559328eb-81f9-559d-9380-de523a88c83c"
-version = "1.0.17+0"
+version = "1.0.16+0"
 
-[[deps.FunctionWrappers]]
-git-tree-sha1 = "d62485945ce5ae9c0c48f124a84998d755bae00e"
-uuid = "069b7b12-0de2-55c6-9aab-29f3d0a68a2e"
-version = "1.1.3"
+[[deps.Functors]]
+deps = ["Compat", "ConstructionBase", "LinearAlgebra", "Random"]
+git-tree-sha1 = "60a0339f28a233601cb74468032b5c302d5067de"
+uuid = "d9f16b24-f501-4c13-a1f2-28368ffc5196"
+version = "0.5.2"
 
 [[deps.Future]]
 deps = ["Random"]
 uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 version = "1.11.0"
+
+[[deps.FuzzyCompletions]]
+deps = ["REPL"]
+git-tree-sha1 = "be713866335f48cfb1285bff2d0cbb8304c1701c"
+uuid = "fb4132e2-a121-4a70-b8a1-d5b831dcdcc2"
+version = "0.5.5"
 
 [[deps.GLFW_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libglvnd_jll", "Xorg_libXcursor_jll", "Xorg_libXi_jll", "Xorg_libXinerama_jll", "Xorg_libXrandr_jll", "libdecor_jll", "xkbcommon_jll"]
@@ -2767,15 +2446,21 @@ version = "0.2.0"
 
 [[deps.GR]]
 deps = ["Artifacts", "Base64", "DelimitedFiles", "Downloads", "GR_jll", "HTTP", "JSON", "Libdl", "LinearAlgebra", "Preferences", "Printf", "Qt6Wayland_jll", "Random", "Serialization", "Sockets", "TOML", "Tar", "Test", "p7zip_jll"]
-git-tree-sha1 = "7ffa4049937aeba2e5e1242274dc052b0362157a"
+git-tree-sha1 = "0ff136326605f8e06e9bcf085a356ab312eef18a"
 uuid = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
-version = "0.73.14"
+version = "0.73.13"
 
 [[deps.GR_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Cairo_jll", "FFMPEG_jll", "Fontconfig_jll", "FreeType2_jll", "GLFW_jll", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pixman_jll", "Qt6Base_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "98fc192b4e4b938775ecd276ce88f539bcec358e"
+git-tree-sha1 = "9cb62849057df859575fc1dda1e91b82f8609709"
 uuid = "d2c73de3-f751-5644-a686-071e5b155ba9"
-version = "0.73.14+0"
+version = "0.73.13+0"
+
+[[deps.GenericLinearAlgebra]]
+deps = ["LinearAlgebra", "Printf", "Random", "libblastrampoline_jll"]
+git-tree-sha1 = "54ee4866eb8c982ee23cf79230ca0aaf916c382b"
+uuid = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
+version = "0.3.15"
 
 [[deps.Gettext_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "XML2_jll"]
@@ -2789,17 +2474,11 @@ git-tree-sha1 = "b0036b392358c80d2d2124746c2bf3d48d457938"
 uuid = "7746bdde-850d-59dc-9ae8-88ece973131d"
 version = "2.82.4+0"
 
-[[deps.GracefulPkg]]
-deps = ["Compat", "Pkg", "TOML"]
-git-tree-sha1 = "ec6d498af5b39005fc458bfcc41a780169abccc9"
-uuid = "828d9ff0-206c-6161-646e-6576656f7244"
-version = "2.1.0"
-
 [[deps.Graphite2_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "8a6dbda1fd736d60cc477d99f2e7a042acfa46e8"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "01979f9b37367603e2848ea225918a3b3861b606"
 uuid = "3b182d85-2403-5c21-9c21-1e1f0cc25472"
-version = "1.3.15+0"
+version = "1.3.14+1"
 
 [[deps.GridInterpolations]]
 deps = ["LinearAlgebra", "Printf", "StaticArrays"]
@@ -2814,9 +2493,9 @@ version = "1.0.2"
 
 [[deps.HTTP]]
 deps = ["Base64", "CodecZlib", "ConcurrentUtilities", "Dates", "ExceptionUnwrapping", "Logging", "LoggingExtras", "MbedTLS", "NetworkOptions", "OpenSSL", "PrecompileTools", "Random", "SimpleBufferStream", "Sockets", "URIs", "UUIDs"]
-git-tree-sha1 = "f93655dc73d7a0b4a368e3c0bce296ae035ad76e"
+git-tree-sha1 = "c67b33b085f6e2faf8bf79a61962e7339a81129c"
 uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-version = "1.10.16"
+version = "1.10.15"
 
 [[deps.HarfBuzz_jll]]
 deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "Graphite2_jll", "JLLWrappers", "Libdl", "Libffi_jll"]
@@ -2831,9 +2510,9 @@ version = "0.2.0"
 
 [[deps.HypergeometricFunctions]]
 deps = ["LinearAlgebra", "OpenLibm_jll", "SpecialFunctions"]
-git-tree-sha1 = "68c173f4f449de5b438ee67ed0c9c748dc31a2ec"
+git-tree-sha1 = "2bd56245074fab4015b9174f24ceba8293209053"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
-version = "0.3.28"
+version = "0.3.27"
 
 [[deps.Hyperscript]]
 deps = ["Test"]
@@ -2859,6 +2538,11 @@ git-tree-sha1 = "950c3717af761bc3ff906c2e8e52bd83390b6ec2"
 uuid = "7869d1d1-7146-5819-86e3-90919afe41df"
 version = "0.4.14"
 
+[[deps.InitialValues]]
+git-tree-sha1 = "4da0f88e9a39111c2fa3add390ab15f3a44f3ca3"
+uuid = "22cec73e-a1b8-11e9-2c92-598750a2cf9c"
+version = "0.3.1"
+
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
@@ -2880,6 +2564,16 @@ git-tree-sha1 = "f59e639916283c1d2e106d2b00910b50f4dab76c"
 uuid = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
 version = "0.21.2"
 
+[[deps.InverseFunctions]]
+git-tree-sha1 = "a779299d77cd080bf77b97535acecd73e1c5e5cb"
+uuid = "3587e190-3f89-42d0-90ee-14403ec27112"
+version = "0.1.17"
+weakdeps = ["Dates", "Test"]
+
+    [deps.InverseFunctions.extensions]
+    InverseFunctionsDatesExt = "Dates"
+    InverseFunctionsTestExt = "Test"
+
 [[deps.IrrationalConstants]]
 git-tree-sha1 = "e2222959fbc6c19554dc15174c81bf7bf3aa691c"
 uuid = "92d709cd-6900-40b7-9082-c6be49f344b6"
@@ -2891,10 +2585,10 @@ uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
 
 [[deps.JLFzf]]
-deps = ["REPL", "Random", "fzf_jll"]
-git-tree-sha1 = "82f7acdc599b65e0f8ccd270ffa1467c21cb647b"
+deps = ["Pipe", "REPL", "Random", "fzf_jll"]
+git-tree-sha1 = "71b48d857e86bf7a1838c4736545699974ce79a2"
 uuid = "1019f520-868f-41f5-a6de-eb00f4b6a39c"
-version = "0.1.11"
+version = "0.1.9"
 
 [[deps.JLLWrappers]]
 deps = ["Artifacts", "Preferences"]
@@ -2910,9 +2604,9 @@ version = "0.21.4"
 
 [[deps.JSON3]]
 deps = ["Dates", "Mmap", "Parsers", "PrecompileTools", "StructTypes", "UUIDs"]
-git-tree-sha1 = "196b41e5a854b387d99e5ede2de3fcb4d0422aae"
+git-tree-sha1 = "1d322381ef7b087548321d3f878cb4c9bd8f8f9b"
 uuid = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
-version = "1.14.2"
+version = "1.14.1"
 
     [deps.JSON3.extensions]
     JSON3ArrowExt = ["ArrowTypes"]
@@ -2928,9 +2622,9 @@ version = "3.1.1+0"
 
 [[deps.JuMP]]
 deps = ["LinearAlgebra", "MacroTools", "MathOptInterface", "MutableArithmetics", "OrderedCollections", "PrecompileTools", "Printf", "SparseArrays"]
-git-tree-sha1 = "c9ace86360c1dc0635de5f9e2ce5143b86c53311"
+git-tree-sha1 = "cf832644f225dbe721bb9b97bf432007765fc695"
 uuid = "4076af6c-e467-56ae-b986-b466b2749572"
-version = "1.25.0"
+version = "1.24.0"
 
     [deps.JuMP.extensions]
     JuMPDimensionalDataExt = "DimensionalData"
@@ -2938,21 +2632,23 @@ version = "1.25.0"
     [deps.JuMP.weakdeps]
     DimensionalData = "0703355e-b756-11e9-17c0-8b28908087d0"
 
+[[deps.JuliaVariables]]
+deps = ["MLStyle", "NameResolution"]
+git-tree-sha1 = "49fb3cb53362ddadb4415e9b73926d6b40709e70"
+uuid = "b14d175d-62b4-44ba-8fb7-3064adc8c3ec"
+version = "0.2.4"
+
 [[deps.KernelAbstractions]]
 deps = ["Adapt", "Atomix", "InteractiveUtils", "MacroTools", "PrecompileTools", "Requires", "StaticArrays", "UUIDs"]
 git-tree-sha1 = "80d268b2f4e396edc5ea004d1e0f569231c71e9e"
 uuid = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 version = "0.9.34"
+weakdeps = ["EnzymeCore", "LinearAlgebra", "SparseArrays"]
 
     [deps.KernelAbstractions.extensions]
     EnzymeExt = "EnzymeCore"
     LinearAlgebraExt = "LinearAlgebra"
     SparseArraysExt = "SparseArrays"
-
-    [deps.KernelAbstractions.weakdeps]
-    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
-    LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [[deps.LAME_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -2968,9 +2664,9 @@ version = "4.0.1+0"
 
 [[deps.LLVM]]
 deps = ["CEnum", "LLVMExtra_jll", "Libdl", "Preferences", "Printf", "Unicode"]
-git-tree-sha1 = "f0e861832695dbb70e710606a7d18b7f81acec92"
+git-tree-sha1 = "5fcfea6df2ff3e4da708a40c969c3812162346df"
 uuid = "929cbde3-209d-540e-8aea-75f648917ca0"
-version = "9.3.1"
+version = "9.2.0"
 
     [deps.LLVM.extensions]
     BFloat16sExt = "BFloat16s"
@@ -2986,18 +2682,9 @@ version = "0.0.35+0"
 
 [[deps.LLVMOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "eb62a3deb62fc6d8822c0c4bef73e4412419c5d8"
+git-tree-sha1 = "78211fb6cbc872f77cad3fc0b6cf647d923f4929"
 uuid = "1d63c593-3942-5779-bab2-d838dc0a180e"
-version = "18.1.8+0"
-
-[[deps.LRUCache]]
-git-tree-sha1 = "5519b95a490ff5fe629c4a7aa3b3dfc9160498b3"
-uuid = "8ac3fa9e-de4c-5943-b1dc-09c6b5f20637"
-version = "1.6.2"
-weakdeps = ["Serialization"]
-
-    [deps.LRUCache.extensions]
-    SerializationExt = ["Serialization"]
+version = "18.1.7+0"
 
 [[deps.LZO_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -3012,9 +2699,9 @@ version = "1.4.0"
 
 [[deps.Latexify]]
 deps = ["Format", "InteractiveUtils", "LaTeXStrings", "MacroTools", "Markdown", "OrderedCollections", "Requires"]
-git-tree-sha1 = "cd10d2cc78d34c0e2a3a36420ab607b611debfbb"
+git-tree-sha1 = "cd714447457c660382fe634710fb56eb255ee42e"
 uuid = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
-version = "0.16.7"
+version = "0.16.6"
 
     [deps.Latexify.extensions]
     DataFramesExt = "DataFrames"
@@ -3038,9 +2725,9 @@ version = "1.11.0"
 
 [[deps.LazySets]]
 deps = ["Distributed", "GLPK", "IntervalArithmetic", "JuMP", "LinearAlgebra", "Random", "ReachabilityBase", "RecipesBase", "Reexport", "Requires", "SharedArrays", "SparseArrays", "StaticArraysCore"]
-git-tree-sha1 = "acac6ec3e8945b48d1923bbe18f0ccb254afa91d"
+git-tree-sha1 = "c46bea04a8a94fb7fa4e3007506601fa34d6a711"
 uuid = "b4f0291d-fe17-52bc-9479-3d1a343d9043"
-version = "3.1.0"
+version = "2.14.2"
 
 [[deps.LibCURL]]
 deps = ["LibCURL_jll", "MozillaCACerts_jll"]
@@ -3077,11 +2764,23 @@ git-tree-sha1 = "27ecae93dd25ee0909666e6835051dd684cc035e"
 uuid = "e9f186c6-92d2-5b65-8a66-fee21dc1b490"
 version = "3.2.2+2"
 
+[[deps.Libgcrypt_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Libgpg_error_jll"]
+git-tree-sha1 = "8be878062e0ffa2c3f67bb58a595375eda5de80b"
+uuid = "d4300ac3-e22c-5743-9152-c294e39db1e4"
+version = "1.11.0+0"
+
 [[deps.Libglvnd_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll", "Xorg_libXext_jll"]
-git-tree-sha1 = "d36c21b9e7c172a44a10484125024495e2625ac0"
+git-tree-sha1 = "ff3b4b9d35de638936a525ecd36e86a8bb919d11"
 uuid = "7e76a0d4-f3c7-5321-8279-8d96eeed0f29"
-version = "1.7.1+1"
+version = "1.7.0+0"
+
+[[deps.Libgpg_error_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "df37206100d39f79b3376afb6b9cee4970041c61"
+uuid = "7add5ba3-2f88-524e-9cd5-f83b8a55f7b8"
+version = "1.51.1+0"
 
 [[deps.Libiconv_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -3091,9 +2790,9 @@ version = "1.18.0+0"
 
 [[deps.Libmount_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a31572773ac1b745e0343fe5e2c8ddda7a37e997"
+git-tree-sha1 = "89211ea35d9df5831fca5d33552c02bd33878419"
 uuid = "4b2f31a3-9ecc-558c-b454-b3730dcb73e9"
-version = "2.41.0+0"
+version = "2.40.3+0"
 
 [[deps.Libtiff_jll]]
 deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "LERC_jll", "Libdl", "XZ_jll", "Zlib_jll", "Zstd_jll"]
@@ -3103,9 +2802,9 @@ version = "4.7.1+0"
 
 [[deps.Libuuid_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "321ccef73a96ba828cd51f2ab5b9f917fa73945a"
+git-tree-sha1 = "e888ad02ce716b319e6bdb985d2ef300e7089889"
 uuid = "38a345b3-de98-5d2b-a5d3-14cd9215e700"
-version = "2.41.0+0"
+version = "2.40.3+0"
 
 [[deps.LineSearches]]
 deps = ["LinearAlgebra", "NLSolversBase", "NaNMath", "Parameters", "Printf"]
@@ -3145,14 +2844,77 @@ uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.1.0"
 
 [[deps.MIMEs]]
-git-tree-sha1 = "c64d943587f7187e751162b3b84445bbbd79f691"
+git-tree-sha1 = "1833212fd6f580c20d4291da9c1b4e8a655b128e"
 uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
-version = "1.1.0"
+version = "1.0.0"
+
+[[deps.MLCore]]
+deps = ["DataAPI", "SimpleTraits", "Tables"]
+git-tree-sha1 = "73907695f35bc7ffd9f11f6c4f2ee8c1302084be"
+uuid = "c2834f40-e789-41da-a90e-33b280584a8c"
+version = "1.0.0"
+
+[[deps.MLDataDevices]]
+deps = ["Adapt", "Compat", "Functors", "Preferences", "Random"]
+git-tree-sha1 = "822cb9543a653e46bcaeb2f632b680cd81e57543"
+uuid = "7e8f7934-dd98-4c1a-8fe8-92b47a384d40"
+version = "1.6.10"
+
+    [deps.MLDataDevices.extensions]
+    MLDataDevicesAMDGPUExt = "AMDGPU"
+    MLDataDevicesCUDAExt = "CUDA"
+    MLDataDevicesChainRulesCoreExt = "ChainRulesCore"
+    MLDataDevicesChainRulesExt = "ChainRules"
+    MLDataDevicesComponentArraysExt = "ComponentArrays"
+    MLDataDevicesFillArraysExt = "FillArrays"
+    MLDataDevicesGPUArraysExt = "GPUArrays"
+    MLDataDevicesMLUtilsExt = "MLUtils"
+    MLDataDevicesMetalExt = ["GPUArrays", "Metal"]
+    MLDataDevicesOneHotArraysExt = "OneHotArrays"
+    MLDataDevicesReactantExt = "Reactant"
+    MLDataDevicesRecursiveArrayToolsExt = "RecursiveArrayTools"
+    MLDataDevicesReverseDiffExt = "ReverseDiff"
+    MLDataDevicesSparseArraysExt = "SparseArrays"
+    MLDataDevicesTrackerExt = "Tracker"
+    MLDataDevicesZygoteExt = "Zygote"
+    MLDataDevicescuDNNExt = ["CUDA", "cuDNN"]
+    MLDataDevicesoneAPIExt = ["GPUArrays", "oneAPI"]
+
+    [deps.MLDataDevices.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    ChainRules = "082447d4-558c-5d27-93f4-14fc19e9eca2"
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
+    FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
+    GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+    MLUtils = "f1d291b0-491e-4a28-83b9-f70985020b54"
+    Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    OneHotArrays = "0b1bfda6-eb8a-41d2-88d8-f5af5cad476f"
+    Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+    RecursiveArrayTools = "731186ca-8d62-57ce-b412-fbd966d074cd"
+    ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
+    Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+    cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
+    oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
+
+[[deps.MLStyle]]
+git-tree-sha1 = "bc38dff0548128765760c79eb7388a4b37fae2c8"
+uuid = "d8e11817-5142-5d16-987a-aa16d5891078"
+version = "0.4.17"
+
+[[deps.MLUtils]]
+deps = ["ChainRulesCore", "Compat", "DataAPI", "DelimitedFiles", "FLoops", "MLCore", "NNlib", "Random", "ShowCases", "SimpleTraits", "Statistics", "StatsBase", "Tables", "Transducers"]
+git-tree-sha1 = "6963295133aaa789f5fb18a6dd276c420793cf43"
+uuid = "f1d291b0-491e-4a28-83b9-f70985020b54"
+version = "0.4.7"
 
 [[deps.MacroTools]]
-git-tree-sha1 = "1e0228a030642014fe5cfe68c2c0a818f9e3f522"
+git-tree-sha1 = "72aebe0b5051e5143a079a4685a46da330a40472"
 uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
-version = "0.5.16"
+version = "0.5.15"
 
 [[deps.Malt]]
 deps = ["Distributed", "Logging", "RelocatableFolders", "Serialization", "Sockets"]
@@ -3167,15 +2929,15 @@ version = "1.11.0"
 
 [[deps.MarkdownLiteral]]
 deps = ["CommonMark", "HypertextLiteral"]
-git-tree-sha1 = "f7d73634acd573bf3489df1ee0d270a5d6d3a7a3"
+git-tree-sha1 = "0d3fa2dd374934b62ee16a4721fe68c418b92899"
 uuid = "736d6165-7244-6769-4267-6b50796e6954"
-version = "0.1.2"
+version = "0.1.1"
 
 [[deps.MathOptInterface]]
-deps = ["BenchmarkTools", "CodecBzip2", "CodecZlib", "DataStructures", "ForwardDiff", "JSON3", "LinearAlgebra", "MutableArithmetics", "NaNMath", "OrderedCollections", "PrecompileTools", "Printf", "SparseArrays", "SpecialFunctions", "Test"]
-git-tree-sha1 = "22b3e0bd1442bf9f5d3cb76e7d34ca87b88d0f36"
+deps = ["BenchmarkTools", "CodecBzip2", "CodecZlib", "DataStructures", "ForwardDiff", "JSON3", "LinearAlgebra", "MutableArithmetics", "NaNMath", "OrderedCollections", "PrecompileTools", "Printf", "SparseArrays", "SpecialFunctions", "Test", "Unicode"]
+git-tree-sha1 = "cfc8c22e3b0157430fc80eb6ef46546483356ea9"
 uuid = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
-version = "1.40.0"
+version = "1.36.0"
 
 [[deps.MbedTLS]]
 deps = ["Dates", "MbedTLS_jll", "MozillaCACerts_jll", "NetworkOptions", "Random", "Sockets"]
@@ -3192,6 +2954,12 @@ version = "2.28.6+0"
 git-tree-sha1 = "c13304c81eec1ed3af7fc20e75fb6b26092a1102"
 uuid = "442fdcdd-2543-5da2-b0f3-8c86c306513e"
 version = "0.3.2"
+
+[[deps.MicroCollections]]
+deps = ["Accessors", "BangBang", "InitialValues"]
+git-tree-sha1 = "44d32db644e84c75dab479f1bc15ee76a1a3618f"
+uuid = "128add7d-3638-4c79-886c-908ea0c25c34"
+version = "0.2.0"
 
 [[deps.Missings]]
 deps = ["DataAPI"]
@@ -3215,30 +2983,64 @@ version = "1.2.1"
 
 [[deps.MutableArithmetics]]
 deps = ["LinearAlgebra", "SparseArrays", "Test"]
-git-tree-sha1 = "491bdcdc943fcbc4c005900d7463c9f216aabf4c"
+git-tree-sha1 = "9c0bc309df575c85422232eedfb74d5a9c155401"
 uuid = "d8a4904e-b15c-11e9-3269-09a3773c0cb0"
-version = "1.6.4"
+version = "1.6.3"
 
 [[deps.NLSolversBase]]
-deps = ["ADTypes", "DifferentiationInterface", "Distributed", "FiniteDiff", "ForwardDiff"]
-git-tree-sha1 = "b14c7be6046e7d48e9063a0053f95ee0fc954176"
+deps = ["DiffResults", "Distributed", "FiniteDiff", "ForwardDiff"]
+git-tree-sha1 = "a0b464d183da839699f4c79e7606d9d186ec172c"
 uuid = "d41bc354-129a-5804-8e4c-c37616107c6c"
-version = "7.9.1"
+version = "7.8.3"
+
+[[deps.NNlib]]
+deps = ["Adapt", "Atomix", "ChainRulesCore", "GPUArraysCore", "KernelAbstractions", "LinearAlgebra", "Random", "Statistics"]
+git-tree-sha1 = "bdc9d30f151590aca0af22690f5ab7dc18a551cb"
+uuid = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
+version = "0.9.27"
+
+    [deps.NNlib.extensions]
+    NNlibAMDGPUExt = "AMDGPU"
+    NNlibCUDACUDNNExt = ["CUDA", "cuDNN"]
+    NNlibCUDAExt = "CUDA"
+    NNlibEnzymeCoreExt = "EnzymeCore"
+    NNlibFFTWExt = "FFTW"
+    NNlibForwardDiffExt = "ForwardDiff"
+
+    [deps.NNlib.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
+    FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+    cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [[deps.NaNMath]]
 deps = ["OpenLibm_jll"]
-git-tree-sha1 = "9b8215b1ee9e78a293f99797cd31375471b2bcae"
+git-tree-sha1 = "cc0a5deefdb12ab3a096f00a6d42133af4560d71"
 uuid = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
-version = "1.1.3"
+version = "1.1.2"
+
+[[deps.NameResolution]]
+deps = ["PrettyPrint"]
+git-tree-sha1 = "1a0fa0e9613f46c9b8c11eee38ebb4f590013c5e"
+uuid = "71a1bf82-56d0-4bbc-8a3c-48b961074391"
+version = "0.1.5"
 
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 version = "1.2.0"
 
+[[deps.NeuralVerification]]
+deps = ["CDDLib", "GLPK", "Interpolations", "JuMP", "LazySets", "LinearAlgebra", "Parameters", "PicoSAT", "Pkg", "Polyhedra", "Random", "Requires", "SCS"]
+git-tree-sha1 = "9b4eb28fb0b28bcdae002b10db69bbe061fbb08f"
+uuid = "146f25fa-00e7-11e9-3ae5-fdbac6e12fa7"
+version = "0.1.0"
+
 [[deps.OffsetArrays]]
-git-tree-sha1 = "117432e406b5c023f665fa73dc26e79ec3630151"
+git-tree-sha1 = "5e1897147d1ff8d98883cda2be2187dcf57d8f0c"
 uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
-version = "1.17.0"
+version = "1.15.0"
 weakdeps = ["Adapt"]
 
     [deps.OffsetArrays.extensions]
@@ -3250,6 +3052,18 @@ git-tree-sha1 = "887579a3eb005446d514ab7aeac5d1d027658b8f"
 uuid = "e7412a2a-1a6e-54c0-be00-318e2571c051"
 version = "1.3.5+1"
 
+[[deps.OneHotArrays]]
+deps = ["Adapt", "ChainRulesCore", "Compat", "GPUArraysCore", "LinearAlgebra", "NNlib"]
+git-tree-sha1 = "c8c7f6bfabe581dc40b580313a75f1ecce087e27"
+uuid = "0b1bfda6-eb8a-41d2-88d8-f5af5cad476f"
+version = "0.2.6"
+
+[[deps.OpenBLAS32_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "ece4587683695fe4c5f20e990da0ed7e83c351e7"
+uuid = "656ef2d0-ae68-5445-9ca0-591084a874a2"
+version = "0.3.29+0"
+
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
@@ -3258,7 +3072,7 @@ version = "0.3.27+1"
 [[deps.OpenLibm_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
-version = "0.8.5+0"
+version = "0.8.1+2"
 
 [[deps.OpenSSL]]
 deps = ["BitFlags", "Dates", "MozillaCACerts_jll", "OpenSSL_jll", "Sockets"]
@@ -3268,9 +3082,9 @@ version = "1.4.3"
 
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "9216a80ff3682833ac4b733caa8c00390620ba5d"
+git-tree-sha1 = "a9697f1d06cc3eb3fb3ad49cc67f2cfabaac31ea"
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "3.5.0+0"
+version = "3.0.16+0"
 
 [[deps.OpenSpecFun_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
@@ -3280,13 +3094,24 @@ version = "0.5.6+0"
 
 [[deps.Optim]]
 deps = ["Compat", "FillArrays", "ForwardDiff", "LineSearches", "LinearAlgebra", "NLSolversBase", "NaNMath", "Parameters", "PositiveFactorizations", "Printf", "SparseArrays", "StatsBase"]
-git-tree-sha1 = "ab7edad78cdef22099f43c54ef77ac63c2c9cc64"
+git-tree-sha1 = "c1f51f704f689f87f28b33836fd460ecf9b34583"
 uuid = "429524aa-4258-5aef-a3af-852621145aeb"
-version = "1.10.0"
+version = "1.11.0"
 weakdeps = ["MathOptInterface"]
 
     [deps.Optim.extensions]
     OptimMOIExt = "MathOptInterface"
+
+[[deps.Optimisers]]
+deps = ["ChainRulesCore", "Functors", "LinearAlgebra", "Random", "Statistics"]
+git-tree-sha1 = "53ff746a3a2b232a37dbcd262ac8bbb2b18202b8"
+uuid = "3bd65402-5787-11e9-1adc-39752487f4e2"
+version = "0.4.4"
+weakdeps = ["Adapt", "EnzymeCore"]
+
+    [deps.Optimisers.extensions]
+    OptimisersAdaptExt = ["Adapt"]
+    OptimisersEnzymeCoreExt = "EnzymeCore"
 
 [[deps.Opus_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -3306,9 +3131,9 @@ version = "10.42.0+1"
 
 [[deps.PDMats]]
 deps = ["LinearAlgebra", "SparseArrays", "SuiteSparse"]
-git-tree-sha1 = "0e1340b5d98971513bddaa6bbed470670cebbbfe"
+git-tree-sha1 = "966b85253e959ea89c53a9abebbf2e964fbf593b"
 uuid = "90014a1f-27ba-587c-ab20-58faa44d9150"
-version = "0.11.34"
+version = "0.11.32"
 
 [[deps.Pango_jll]]
 deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jll", "Glib_jll", "HarfBuzz_jll", "JLLWrappers", "Libdl"]
@@ -3324,15 +3149,32 @@ version = "0.12.3"
 
 [[deps.Parsers]]
 deps = ["Dates", "PrecompileTools", "UUIDs"]
-git-tree-sha1 = "7d2f8f21da5db6a806faf7b9b292296da42b2810"
+git-tree-sha1 = "8489905bcdbcfac64d1daa51ca07c0d8f0283821"
 uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "2.8.3"
+version = "2.8.1"
+
+[[deps.PicoSAT]]
+deps = ["PicoSAT_jll", "Test"]
+git-tree-sha1 = "4b24a9cb86ff2dd91cd6ca500780ce9088c0d07a"
+uuid = "ff2beb65-d7cd-5ff1-a187-74671133a339"
+version = "0.4.1"
+
+[[deps.PicoSAT_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "8801eab0536eabe7602f124f27dfbe8c067499d5"
+uuid = "e78fa76d-a187-569f-aede-ad11521a2edf"
+version = "965.0.0+0"
+
+[[deps.Pipe]]
+git-tree-sha1 = "6842804e7867b115ca9de748a0cf6b364523c16d"
+uuid = "b98c9c47-44ae-5843-9183-064241ee97a0"
+version = "1.3.0"
 
 [[deps.Pixman_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "Libdl"]
-git-tree-sha1 = "db76b1ecd5e9715f3d043cec13b2ec93ce015d53"
+git-tree-sha1 = "35621f10a7531bc8fa58f74610b1bfb70a3cfc6b"
 uuid = "30392449-352a-5448-841d-b1acce4e97dc"
-version = "0.44.2+0"
+version = "0.43.4+0"
 
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "Random", "SHA", "TOML", "Tar", "UUIDs", "p7zip_jll"]
@@ -3357,9 +3199,9 @@ version = "1.4.3"
 
 [[deps.Plots]]
 deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers", "GR", "JLFzf", "JSON", "LaTeXStrings", "Latexify", "LinearAlgebra", "Measures", "NaNMath", "Pkg", "PlotThemes", "PlotUtils", "PrecompileTools", "Printf", "REPL", "Random", "RecipesBase", "RecipesPipeline", "Reexport", "RelocatableFolders", "Requires", "Scratch", "Showoff", "SparseArrays", "Statistics", "StatsBase", "TOML", "UUIDs", "UnicodeFun", "UnitfulLatexify", "Unzip"]
-git-tree-sha1 = "809ba625a00c605f8d00cd2a9ae19ce34fc24d68"
+git-tree-sha1 = "dae01f8c2e069a683d3a6e17bbae5070ab94786f"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-version = "1.40.13"
+version = "1.40.9"
 
     [deps.Plots.extensions]
     FileIOExt = "FileIO"
@@ -3376,22 +3218,38 @@ version = "1.40.13"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [[deps.Pluto]]
-deps = ["Base64", "Configurations", "Dates", "Downloads", "ExpressionExplorer", "FileWatching", "GracefulPkg", "HTTP", "HypertextLiteral", "InteractiveUtils", "LRUCache", "Logging", "LoggingExtras", "MIMEs", "Malt", "Markdown", "MsgPack", "Pkg", "PlutoDependencyExplorer", "PrecompileSignatures", "PrecompileTools", "REPL", "RegistryInstances", "RelocatableFolders", "Scratch", "Sockets", "TOML", "Tables", "URIs", "UUIDs"]
-git-tree-sha1 = "a105834e8c86157bba9def667dde7ed79cb405b4"
+deps = ["Base64", "Configurations", "Dates", "Downloads", "ExpressionExplorer", "FileWatching", "FuzzyCompletions", "HTTP", "HypertextLiteral", "InteractiveUtils", "Logging", "LoggingExtras", "MIMEs", "Malt", "Markdown", "MsgPack", "Pkg", "PlutoDependencyExplorer", "PrecompileSignatures", "PrecompileTools", "REPL", "RegistryInstances", "RelocatableFolders", "Scratch", "Sockets", "TOML", "Tables", "URIs", "UUIDs"]
+git-tree-sha1 = "b5509a2e4d4c189da505b780e3f447d1e38a0350"
 uuid = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
-version = "0.20.8"
+version = "0.20.4"
 
 [[deps.PlutoDependencyExplorer]]
 deps = ["ExpressionExplorer", "InteractiveUtils", "Markdown"]
-git-tree-sha1 = "9071bfe6d1c3c51f62918513e8dfa0705fbdef7e"
+git-tree-sha1 = "e0864c15334d2c4bac8137ce3359f1174565e719"
 uuid = "72656b73-756c-7461-726b-72656b6b696b"
-version = "1.2.1"
+version = "1.2.0"
 
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
-git-tree-sha1 = "d3de2694b52a01ce61a036f18ea9c0f61c4a9230"
+git-tree-sha1 = "7e71a55b87222942f0f9337be62e26b1f103d3e4"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.62"
+version = "0.7.61"
+
+[[deps.Polyhedra]]
+deps = ["GenericLinearAlgebra", "LinearAlgebra", "MathOptInterface", "MutableArithmetics", "SparseArrays", "StaticArrays"]
+git-tree-sha1 = "754bc39995daff07ed01d7ebdc8c9cf6681d241e"
+uuid = "67491407-f73d-577b-9b50-8179a7c68029"
+version = "0.8.1"
+
+    [deps.Polyhedra.extensions]
+    PolyhedraGeometryBasicsExt = "GeometryBasics"
+    PolyhedraJuMPExt = "JuMP"
+    PolyhedraRecipesBaseExt = "RecipesBase"
+
+    [deps.Polyhedra.weakdeps]
+    GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
+    JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+    RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 
 [[deps.PositiveFactorizations]]
 deps = ["LinearAlgebra"]
@@ -3415,6 +3273,11 @@ deps = ["TOML"]
 git-tree-sha1 = "9306f6085165d270f7e3db02af26a400d580f5c6"
 uuid = "21216c6a-2e73-6563-6e65-726566657250"
 version = "1.4.3"
+
+[[deps.PrettyPrint]]
+git-tree-sha1 = "632eb4abab3449ab30c5e1afaa874f0b98b586e4"
+uuid = "8162dcfd-2161-5ef2-ae6c-7681170c5f98"
+version = "0.2.0"
 
 [[deps.Printf]]
 deps = ["Unicode"]
@@ -3494,9 +3357,9 @@ weakdeps = ["FixedPointNumbers"]
 
 [[deps.ReachabilityBase]]
 deps = ["ExprTools", "InteractiveUtils", "LinearAlgebra", "Random", "Requires", "SparseArrays"]
-git-tree-sha1 = "c2bc05dbc627428094d246c3237f2e389dd87ef0"
+git-tree-sha1 = "d28da1989cc21fcf57611f928061de5e8f27dc5c"
 uuid = "379f33d0-9447-4353-bd03-d664070e549f"
-version = "0.3.4"
+version = "0.3.3"
 
 [[deps.RealDot]]
 deps = ["LinearAlgebra"]
@@ -3535,15 +3398,9 @@ version = "1.0.1"
 
 [[deps.Requires]]
 deps = ["UUIDs"]
-git-tree-sha1 = "62389eeff14780bfe55195b7204c0d8738436d64"
+git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
-version = "1.3.1"
-
-[[deps.ReverseDiff]]
-deps = ["ChainRulesCore", "DiffResults", "DiffRules", "ForwardDiff", "FunctionWrappers", "LinearAlgebra", "LogExpFunctions", "MacroTools", "NaNMath", "Random", "SpecialFunctions", "StaticArrays", "Statistics"]
-git-tree-sha1 = "cc6cd622481ea366bb9067859446a8b01d92b468"
-uuid = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
-version = "1.15.3"
+version = "1.3.0"
 
 [[deps.Rmath]]
 deps = ["Random", "Rmath_jll"]
@@ -3561,6 +3418,26 @@ version = "0.5.1+0"
 git-tree-sha1 = "40b9edad2e5287e05bd413a38f61a8ff55b9557b"
 uuid = "5eaf0fd0-dfba-4ccb-bf02-d820a40db705"
 version = "0.2.1"
+
+[[deps.SCS]]
+deps = ["MathOptInterface", "Requires", "SCS_jll", "SparseArrays"]
+git-tree-sha1 = "aa3fcff53da363b4ba4b54d4ac4c9186ab00d703"
+uuid = "c946c3f1-0d1f-5ce8-9dea-7daa1f7e2d13"
+version = "2.0.2"
+
+    [deps.SCS.extensions]
+    SCSSCS_GPU_jllExt = ["SCS_GPU_jll"]
+    SCSSCS_MKL_jllExt = ["SCS_MKL_jll"]
+
+    [deps.SCS.weakdeps]
+    SCS_GPU_jll = "af6e375f-46ec-5fa0-b791-491b0dfa44a4"
+    SCS_MKL_jll = "3f2553a9-4106-52be-b7dd-865123654657"
+
+[[deps.SCS_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "Libdl", "OpenBLAS32_jll"]
+git-tree-sha1 = "902cc4e42ecca21bbd74babf899b2a5b12add323"
+uuid = "f4f2fc5b-1d94-523c-97ea-2ab488bedf4b"
+version = "3.2.7+0"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
@@ -3589,14 +3466,19 @@ version = "0.2.1"
 
 [[deps.Setfield]]
 deps = ["ConstructionBase", "Future", "MacroTools", "StaticArraysCore"]
-git-tree-sha1 = "c5391c6ace3bc430ca630251d02ea9687169ca68"
+git-tree-sha1 = "e2cc6d8c88613c05e1defb55170bf5ff211fbeac"
 uuid = "efcf1570-3423-57d1-acb7-fd33fddbac46"
-version = "1.1.2"
+version = "1.1.1"
 
 [[deps.SharedArrays]]
 deps = ["Distributed", "Mmap", "Random", "Serialization"]
 uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
 version = "1.11.0"
+
+[[deps.ShowCases]]
+git-tree-sha1 = "7f534ad62ab2bd48591bdeac81994ea8c445e4a5"
+uuid = "605ecd9f-84a6-4c9e-81e2-4798472b76a3"
+version = "0.1.0"
 
 [[deps.Showoff]]
 deps = ["Dates", "Grisu"]
@@ -3614,6 +3496,12 @@ version = "1.0.0"
 git-tree-sha1 = "f305871d2f381d21527c770d4788c06c097c9bc1"
 uuid = "777ac1f9-54b0-4bf8-805c-2214025038e7"
 version = "1.2.0"
+
+[[deps.SimpleTraits]]
+deps = ["InteractiveUtils", "MacroTools"]
+git-tree-sha1 = "5d7e3f4e11935503d3ecaf7186eac40602e7d231"
+uuid = "699a6c99-e7fa-54fc-8d76-47d257e15c1d"
+version = "0.9.4"
 
 [[deps.Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
@@ -3638,31 +3526,37 @@ version = "0.1.2"
 
 [[deps.SpecialFunctions]]
 deps = ["IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
-git-tree-sha1 = "41852b8679f78c8d8961eeadc8f62cef861a52e3"
+git-tree-sha1 = "64cca0c26b4f31ba18f13f6c12af7c85f478cfde"
 uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
-version = "2.5.1"
+version = "2.5.0"
 weakdeps = ["ChainRulesCore"]
 
     [deps.SpecialFunctions.extensions]
     SpecialFunctionsChainRulesCoreExt = "ChainRulesCore"
 
+[[deps.SplittablesBase]]
+deps = ["Setfield", "Test"]
+git-tree-sha1 = "e08a62abc517eb79667d0a29dc08a3b589516bb5"
+uuid = "171d559e-b47b-412a-8079-5efa626c420e"
+version = "0.1.15"
+
 [[deps.StableRNGs]]
 deps = ["Random"]
-git-tree-sha1 = "95af145932c2ed859b63329952ce8d633719f091"
+git-tree-sha1 = "83e6cce8324d49dfaf9ef059227f91ed4441a8e5"
 uuid = "860ef19b-820b-49d6-a774-d7a799459cd3"
-version = "1.0.3"
+version = "1.0.2"
 
 [[deps.StanfordAA228V]]
 deps = ["AbstractPlutoDingetjes", "BSON", "Base64", "Distances", "Distributions", "Downloads", "ForwardDiff", "GridInterpolations", "Interpolations", "LazySets", "LinearAlgebra", "Markdown", "Optim", "Parameters", "Pkg", "Plots", "Pluto", "PlutoUI", "ProgressLogging", "Random", "SignalTemporalLogic", "Statistics", "TOML"]
-git-tree-sha1 = "86ea9251637f86e14eaf1be169462aa710d4817f"
+git-tree-sha1 = "758b0f1666ca15b1b3d647674da637263a4a91e9"
 uuid = "6f6e590e-f8c2-4a21-9268-94576b9fb3b1"
-version = "0.1.27"
+version = "0.1.25"
 
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "PrecompileTools", "Random", "StaticArraysCore"]
-git-tree-sha1 = "0feb6b9031bd5c51f9072393eb5ab3efd31bf9e4"
+git-tree-sha1 = "e3be13f448a43610f978d29b7adf78c76022467a"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.9.13"
+version = "1.9.12"
 weakdeps = ["ChainRulesCore", "Statistics"]
 
     [deps.StaticArrays.extensions]
@@ -3692,29 +3586,26 @@ version = "1.7.0"
 
 [[deps.StatsBase]]
 deps = ["AliasTables", "DataAPI", "DataStructures", "LinearAlgebra", "LogExpFunctions", "Missings", "Printf", "Random", "SortingAlgorithms", "SparseArrays", "Statistics", "StatsAPI"]
-git-tree-sha1 = "b81c5035922cc89c2d9523afc6c54be512411466"
+git-tree-sha1 = "29321314c920c26684834965ec2ce0dacc9cf8e5"
 uuid = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
-version = "0.34.5"
+version = "0.34.4"
 
 [[deps.StatsFuns]]
 deps = ["HypergeometricFunctions", "IrrationalConstants", "LogExpFunctions", "Reexport", "Rmath", "SpecialFunctions"]
-git-tree-sha1 = "8e45cecc66f3b42633b8ce14d431e8e57a3e242e"
+git-tree-sha1 = "b423576adc27097764a90e163157bcfc9acf0f46"
 uuid = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
-version = "1.5.0"
+version = "1.3.2"
+weakdeps = ["ChainRulesCore", "InverseFunctions"]
 
     [deps.StatsFuns.extensions]
     StatsFunsChainRulesCoreExt = "ChainRulesCore"
     StatsFunsInverseFunctionsExt = "InverseFunctions"
 
-    [deps.StatsFuns.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    InverseFunctions = "3587e190-3f89-42d0-90ee-14403ec27112"
-
 [[deps.StructArrays]]
 deps = ["ConstructionBase", "DataAPI", "Tables"]
-git-tree-sha1 = "8ad2e38cbb812e29348719cc63580ec1dfeb9de4"
+git-tree-sha1 = "9537ef82c42cdd8c5d443cbc359110cbb36bae10"
 uuid = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
-version = "0.7.1"
+version = "0.6.21"
 weakdeps = ["Adapt", "GPUArraysCore", "KernelAbstractions", "LinearAlgebra", "SparseArrays", "StaticArrays"]
 
     [deps.StructArrays.extensions]
@@ -3781,15 +3672,37 @@ git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
 uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 version = "0.11.3"
 
+[[deps.Transducers]]
+deps = ["Accessors", "ArgCheck", "BangBang", "Baselet", "CompositionsBase", "ConstructionBase", "DefineSingletons", "Distributed", "InitialValues", "Logging", "Markdown", "MicroCollections", "Requires", "SplittablesBase", "Tables"]
+git-tree-sha1 = "7deeab4ff96b85c5f72c824cae53a1398da3d1cb"
+uuid = "28d57a85-8fef-5791-bfe6-a80928e7c999"
+version = "0.4.84"
+
+    [deps.Transducers.extensions]
+    TransducersAdaptExt = "Adapt"
+    TransducersBlockArraysExt = "BlockArrays"
+    TransducersDataFramesExt = "DataFrames"
+    TransducersLazyArraysExt = "LazyArrays"
+    TransducersOnlineStatsBaseExt = "OnlineStatsBase"
+    TransducersReferenceablesExt = "Referenceables"
+
+    [deps.Transducers.weakdeps]
+    Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+    BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
+    DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+    LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
+    OnlineStatsBase = "925886fa-5bf2-5e8e-b522-a9147a512338"
+    Referenceables = "42d2dcc6-99eb-4e98-b66c-637b7d73030e"
+
 [[deps.Tricks]]
 git-tree-sha1 = "6cae795a5a9313bbb4f60683f7263318fc7d1505"
 uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
 version = "0.1.10"
 
 [[deps.URIs]]
-git-tree-sha1 = "cbbebadbcc76c5ca1cc4b4f3b0614b3e603b5000"
+git-tree-sha1 = "67db6cc7b3821e19ebe75791a9dd19c9b1188f2b"
 uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
-version = "1.5.2"
+version = "1.5.1"
 
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
@@ -3816,14 +3729,11 @@ deps = ["Dates", "LinearAlgebra", "Random"]
 git-tree-sha1 = "c0667a8e676c53d390a09dc6870b3d8d6650e2bf"
 uuid = "1986cc42-f94f-5a68-af5c-568840ba703d"
 version = "1.22.0"
+weakdeps = ["ConstructionBase", "InverseFunctions"]
 
     [deps.Unitful.extensions]
     ConstructionBaseUnitfulExt = "ConstructionBase"
     InverseFunctionsUnitfulExt = "InverseFunctions"
-
-    [deps.Unitful.weakdeps]
-    ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
-    InverseFunctions = "3587e190-3f89-42d0-90ee-14403ec27112"
 
 [[deps.UnitfulLatexify]]
 deps = ["LaTeXStrings", "Latexify", "Unitful"]
@@ -3871,99 +3781,111 @@ version = "1.0.0"
 
 [[deps.XML2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Zlib_jll"]
-git-tree-sha1 = "b8b243e47228b4a3877f1dd6aee0c5d56db7fcf4"
+git-tree-sha1 = "ee6f41aac16f6c9a8cab34e2f7a200418b1cc1e3"
 uuid = "02c8fc9c-b97f-50b9-bbe4-9be30ff0a78a"
-version = "2.13.6+1"
+version = "2.13.6+0"
+
+[[deps.XSLT_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Libgcrypt_jll", "Libgpg_error_jll", "Libiconv_jll", "XML2_jll", "Zlib_jll"]
+git-tree-sha1 = "7d1671acbe47ac88e981868a078bd6b4e27c5191"
+uuid = "aed1982a-8fda-507f-9586-7b0439959a61"
+version = "1.1.42+0"
 
 [[deps.XZ_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "fee71455b0aaa3440dfdd54a9a36ccef829be7d4"
+git-tree-sha1 = "56c6604ec8b2d82cc4cfe01aa03b00426aac7e1f"
 uuid = "ffd25f8a-64ca-5728-b0f7-c24cf3aae800"
-version = "5.8.1+0"
+version = "5.6.4+1"
 
 [[deps.Xorg_libICE_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a3ea76ee3f4facd7a64684f9af25310825ee3668"
+git-tree-sha1 = "326b4fea307b0b39892b3e85fa451692eda8d46c"
 uuid = "f67eecfb-183a-506d-b269-f58e52b52d7c"
-version = "1.1.2+0"
+version = "1.1.1+0"
 
 [[deps.Xorg_libSM_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libICE_jll"]
-git-tree-sha1 = "9c7ad99c629a44f81e7799eb05ec2746abb5d588"
+git-tree-sha1 = "3796722887072218eabafb494a13c963209754ce"
 uuid = "c834827a-8449-5923-a945-d239c165b7dd"
-version = "1.2.6+0"
+version = "1.2.4+0"
 
 [[deps.Xorg_libX11_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libxcb_jll", "Xorg_xtrans_jll"]
-git-tree-sha1 = "b5899b25d17bf1889d25906fb9deed5da0c15b3b"
+git-tree-sha1 = "9dafcee1d24c4f024e7edc92603cedba72118283"
 uuid = "4f6342f7-b3d2-589e-9d20-edeb45f2b2bc"
-version = "1.8.12+0"
+version = "1.8.6+3"
 
 [[deps.Xorg_libXau_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "aa1261ebbac3ccc8d16558ae6799524c450ed16b"
+git-tree-sha1 = "e9216fdcd8514b7072b43653874fd688e4c6c003"
 uuid = "0c0b7dd1-d40b-584c-a123-a41640f87eec"
-version = "1.0.13+0"
+version = "1.0.12+0"
 
 [[deps.Xorg_libXcursor_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXfixes_jll", "Xorg_libXrender_jll"]
-git-tree-sha1 = "6c74ca84bbabc18c4547014765d194ff0b4dc9da"
+git-tree-sha1 = "807c226eaf3651e7b2c468f687ac788291f9a89b"
 uuid = "935fb764-8cf2-53bf-bb30-45bb1f8bf724"
-version = "1.2.4+0"
+version = "1.2.3+0"
 
 [[deps.Xorg_libXdmcp_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "52858d64353db33a56e13c341d7bf44cd0d7b309"
+git-tree-sha1 = "89799ae67c17caa5b3b5a19b8469eeee474377db"
 uuid = "a3789734-cfe1-5b06-b2d0-1dd0d9d62d05"
-version = "1.1.6+0"
+version = "1.1.5+0"
 
 [[deps.Xorg_libXext_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "a4c0ee07ad36bf8bbce1c3bb52d21fb1e0b987fb"
+git-tree-sha1 = "d7155fea91a4123ef59f42c4afb5ab3b4ca95058"
 uuid = "1082639a-0dae-5f34-9b06-72781eeb8cb3"
-version = "1.3.7+0"
+version = "1.3.6+3"
 
 [[deps.Xorg_libXfixes_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "9caba99d38404b285db8801d5c45ef4f4f425a6d"
+git-tree-sha1 = "6fcc21d5aea1a0b7cce6cab3e62246abd1949b86"
 uuid = "d091e8ba-531a-589c-9de9-94069b037ed8"
-version = "6.0.1+0"
+version = "6.0.0+0"
 
 [[deps.Xorg_libXi_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll", "Xorg_libXfixes_jll"]
-git-tree-sha1 = "a376af5c7ae60d29825164db40787f15c80c7c54"
+git-tree-sha1 = "984b313b049c89739075b8e2a94407076de17449"
 uuid = "a51aa0fd-4e3c-5386-b890-e753decda492"
-version = "1.8.3+0"
+version = "1.8.2+0"
 
 [[deps.Xorg_libXinerama_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll"]
-git-tree-sha1 = "a5bc75478d323358a90dc36766f3c99ba7feb024"
+git-tree-sha1 = "a1a7eaf6c3b5b05cb903e35e8372049b107ac729"
 uuid = "d1454406-59df-5ea1-beac-c340f2130bc3"
-version = "1.1.6+0"
+version = "1.1.5+0"
 
 [[deps.Xorg_libXrandr_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll", "Xorg_libXrender_jll"]
-git-tree-sha1 = "aff463c82a773cb86061bce8d53a0d976854923e"
+git-tree-sha1 = "b6f664b7b2f6a39689d822a6300b14df4668f0f4"
 uuid = "ec84b674-ba8e-5d96-8ba1-2a689ba10484"
-version = "1.5.5+0"
+version = "1.5.4+0"
 
 [[deps.Xorg_libXrender_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "7ed9347888fac59a618302ee38216dd0379c480d"
+git-tree-sha1 = "a490c6212a0e90d2d55111ac956f7c4fa9c277a6"
 uuid = "ea2f1a96-1ddc-540d-b46f-429655e07cfa"
-version = "0.9.12+0"
+version = "0.9.11+1"
+
+[[deps.Xorg_libpthread_stubs_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "c57201109a9e4c0585b208bb408bc41d205ac4e9"
+uuid = "14d82f49-176c-5ed1-bb49-ad3f5cbd8c74"
+version = "0.1.2+0"
 
 [[deps.Xorg_libxcb_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXau_jll", "Xorg_libXdmcp_jll"]
-git-tree-sha1 = "bfcaf7ec088eaba362093393fe11aa141fa15422"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "XSLT_jll", "Xorg_libXau_jll", "Xorg_libXdmcp_jll", "Xorg_libpthread_stubs_jll"]
+git-tree-sha1 = "1a74296303b6524a0472a8cb12d3d87a78eb3612"
 uuid = "c7cfdc94-dc32-55de-ac96-5a1b8d977c5b"
-version = "1.17.1+0"
+version = "1.17.0+3"
 
 [[deps.Xorg_libxkbfile_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "e3150c7400c41e207012b41659591f083f3ef795"
+git-tree-sha1 = "dbc53e4cf7701c6c7047c51e17d6e64df55dca94"
 uuid = "cc61e674-0454-545c-8b26-ed2c68acab7a"
-version = "1.1.3+0"
+version = "1.1.2+1"
 
 [[deps.Xorg_xcb_util_cursor_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_xcb_util_image_jll", "Xorg_xcb_util_jll", "Xorg_xcb_util_renderutil_jll"]
@@ -4003,21 +3925,21 @@ version = "0.4.1+1"
 
 [[deps.Xorg_xkbcomp_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libxkbfile_jll"]
-git-tree-sha1 = "801a858fc9fb90c11ffddee1801bb06a738bda9b"
+git-tree-sha1 = "ab2221d309eda71020cdda67a973aa582aa85d69"
 uuid = "35661453-b289-5fab-8a00-3d9160c6a3a4"
-version = "1.4.7+0"
+version = "1.4.6+1"
 
 [[deps.Xorg_xkeyboard_config_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_xkbcomp_jll"]
-git-tree-sha1 = "00af7ebdc563c9217ecc67776d1bbf037dbcebf4"
+git-tree-sha1 = "691634e5453ad362044e2ad653e79f3ee3bb98c3"
 uuid = "33bec58e-1273-512f-9401-5d533626f822"
-version = "2.44.0+0"
+version = "2.39.0+0"
 
 [[deps.Xorg_xtrans_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a63799ff68005991f9d9491b6e95bd3478d783cb"
+git-tree-sha1 = "6dba04dbfb72ae3ebe5418ba33d087ba8aa8cb00"
 uuid = "c5fb5394-a638-5e4d-96e5-b29de1b5cf10"
-version = "1.6.0+0"
+version = "1.5.1+0"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]
@@ -4026,15 +3948,15 @@ version = "1.2.13+1"
 
 [[deps.Zstd_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "446b23e73536f84e8037f5dce465e92275f6a308"
+git-tree-sha1 = "622cf78670d067c738667aaa96c553430b65e269"
 uuid = "3161d3a3-bdf6-5164-811a-617609db77b4"
-version = "1.5.7+1"
+version = "1.5.7+0"
 
 [[deps.Zygote]]
 deps = ["AbstractFFTs", "ChainRules", "ChainRulesCore", "DiffRules", "Distributed", "FillArrays", "ForwardDiff", "GPUArrays", "GPUArraysCore", "IRTools", "InteractiveUtils", "LinearAlgebra", "LogExpFunctions", "MacroTools", "NaNMath", "PrecompileTools", "Random", "Requires", "SparseArrays", "SpecialFunctions", "Statistics", "ZygoteRules"]
-git-tree-sha1 = "8462a20f0fd85b4ef4a1b7310d33e7475d2bb14f"
+git-tree-sha1 = "0b3c944f5d2d8b466c5d20a84c229c17c528f49e"
 uuid = "e88e6eb3-aa80-5325-afca-941959d7151f"
-version = "0.6.77"
+version = "0.6.75"
 
     [deps.Zygote.extensions]
     ZygoteColorsExt = "Colors"
@@ -4052,6 +3974,12 @@ git-tree-sha1 = "434b3de333c75fc446aa0d19fc394edafd07ab08"
 uuid = "700de1a5-db45-46bc-99cf-38207098b444"
 version = "0.2.7"
 
+[[deps.cddlib_jll]]
+deps = ["Artifacts", "GMP_jll", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "08f5df03703af917b9bfec47b9767eb943220d08"
+uuid = "f07e07eb-5685-515a-97c8-3014f6152feb"
+version = "0.94.14+0"
+
 [[deps.eudev_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "gperf_jll"]
 git-tree-sha1 = "431b678a28ebb559d224c0b6b6d01afce87c51ba"
@@ -4060,9 +3988,9 @@ version = "3.2.9+0"
 
 [[deps.fzf_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "b6a34e0e0960190ac2a4363a1bd003504772d631"
+git-tree-sha1 = "6e50f145003024df4f5cb96c7fce79466741d601"
 uuid = "214eeab7-80f7-51ab-84ad-2988db7cef09"
-version = "0.61.1+0"
+version = "0.56.3+0"
 
 [[deps.gperf_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -4113,9 +4041,9 @@ version = "1.18.0+0"
 
 [[deps.libpng_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Zlib_jll"]
-git-tree-sha1 = "068dfe202b0a05b8332f1e8e6b4080684b9c7700"
+git-tree-sha1 = "055a96774f383318750a1a5e10fd4151f04c29c5"
 uuid = "b53b4c65-9356-5827-b1ea-8c7a1a84506f"
-version = "1.6.47+0"
+version = "1.6.46+0"
 
 [[deps.libvorbis_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Ogg_jll", "Pkg"]
@@ -4152,15 +4080,13 @@ uuid = "dfaa095f-4041-5dcd-9319-2fabd8486b76"
 version = "3.5.0+0"
 
 [[deps.xkbcommon_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Wayland_jll", "Wayland_protocols_jll", "Xorg_libxcb_jll", "Xorg_xkeyboard_config_jll"]
-git-tree-sha1 = "c950ae0a3577aec97bfccf3381f66666bc416729"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Wayland_jll", "Wayland_protocols_jll", "Xorg_libxcb_jll", "Xorg_xkeyboard_config_jll"]
+git-tree-sha1 = "63406453ed9b33a0df95d570816d5366c92b7809"
 uuid = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
-version = "1.8.1+0"
+version = "1.4.1+2"
 """
 
 # ╔═╡ Cell order:
-# ╟─54107cf5-8c8f-495f-8709-07b904ca98ae
-# ╟─e7509db7-bc59-4541-a145-cec0fa1b7c7a
 # ╟─6b17139e-6caf-4f07-a607-e403bf1ad794
 # ╠═14964632-98d8-4a2f-b2f6-e3f28b558803
 # ╟─117d0059-ce1a-497e-8667-a0c2ef20c632
@@ -4173,139 +4099,119 @@ version = "1.8.1+0"
 # ╟─da5b4000-0bce-4fc2-be85-dada21264ca3
 # ╟─0456a732-2672-4108-a241-db9ae879a913
 # ╟─6e8ab7c9-fb49-4d89-946d-c7d7588c199a
-# ╟─fe044059-9102-4e7f-9888-d9f03eec69ff
-# ╟─41406be3-4c2d-41db-bdb4-9e2ff875cebe
 # ╟─a21612a1-1092-4892-9132-629833e7c867
 # ╟─ec776b30-6a30-4643-a22c-e071a365d50b
-# ╟─18754cc6-c089-4245-ad10-2848594e49b4
+# ╟─5aafffc6-8e3b-4591-99f6-6ee3b8082786
 # ╟─c4fa9af9-1a79-43d7-9e8d-2854652a4ea2
+# ╟─bd8cfc1d-cf0e-42e2-8e46-c763f142e8f3
+# ╟─5d389282-466d-47d8-ae69-0794cf620f27
 # ╟─6bad6e8b-c021-41d2-afbb-bcd0242138dd
-# ╟─dba42df0-3199-4c31-a735-b6b514703d50
-# ╟─109c3d27-2c23-48a7-9fd7-be8a1f359e55
-# ╟─bc2f62f5-1330-46cd-bb81-411baa483488
-# ╟─bed9a6ed-3ca0-492d-9141-a34b601ea315
-# ╟─a46702a3-4a8c-4749-bd00-52f8cce5b8ee
-# ╟─8469fe70-8cf6-43c1-b16b-d4b970a2c807
+# ╟─1167fdfb-b097-4d18-b982-b1786794f8cf
+# ╟─3e392ff6-6a32-49cc-9eab-82ae2d6e9154
 # ╟─fd8c851a-3a42-41c5-b0fd-a12085543c9b
-# ╟─84d9c552-2e78-4922-9ec0-4d12d0c62643
-# ╟─e6e675bf-5181-4e45-8c5d-e576aa411064
+# ╟─851943ba-d6f8-4e97-bbcd-dec5eb8b8b76
+# ╟─55521bf3-eb1d-4ea1-9c18-aa8ba4461bff
 # ╟─17fa8557-9656-4347-9d44-213fd3b635a6
-# ╠═22feee3d-4627-4358-9937-3c780b7e8bcb
+# ╠═e93d0515-c7d4-4af6-9041-fda738af5caa
 # ╠═6f3e24de-094c-49dc-b892-6721b3cc54ed
-# ╟─45f7c3a5-5763-43db-aba8-41ef8db39a53
-# ╠═9c1daa96-76b2-4a6f-8d0e-f95d26168d2b
-# ╟─370a15eb-df4b-493a-af77-00914b4616ea
+# ╟─592e4e77-8104-4464-8e10-ee2834c7c0ab
 # ╠═ab4c6807-5b4e-4688-b794-159e26a1599b
-# ╟─e86d260f-c93d-4561-a9f1-44e4c7af827e
-# ╟─166bd412-d433-4dc9-b874-7359108c0a8b
-# ╟─cf42542a-f519-478d-a57e-652c420f4ed5
-# ╟─b6573f2b-52e5-4881-91e7-759d628bf7fe
-# ╟─a607813d-c76c-4a5a-9474-a1d8588b671b
-# ╟─bb4b252d-fc49-49d9-a31b-5092d73dc244
-# ╟─9d051b1b-dcf4-418c-988c-37561a10f485
-# ╟─9ea24b88-03b3-434f-a703-af197f754dcd
-# ╠═a67ea28d-3927-40f9-a049-b9faeb0cfa58
-# ╟─6ea3ba83-ade5-4a19-ad60-b3fe5c56e3b8
-# ╟─cd2adeb4-493f-4d37-8e0d-9501637c6000
-# ╟─42456abf-4930-4b01-afd1-fce3b4881e28
-# ╠═c2ae204e-dbcc-453a-81f5-791ba4be39db
-# ╟─c8c1a321-39c8-4a78-bbcf-13663243c457
-# ╟─73da2a56-8991-4484-bcde-7d397214e552
-# ╟─fe7f4a79-1a63-4272-a776-358a309c8550
-# ╠═254956d0-8f58-4e2b-b8a9-5dd10dd074a2
-# ╟─cc11217f-e070-4d20-8ebe-18e7eb977487
-# ╟─db5c210a-e783-40bf-892d-58a9fe5dfb23
-# ╠═b60c518f-41bb-4abd-b573-d3f8d29f60de
-# ╟─aced4250-12be-41ca-8caf-bc660e2d629b
-# ╟─66309827-bd01-417b-bf14-0240805139ca
+# ╟─86f9b1ae-d17f-4084-999a-28598ddc2846
 # ╟─402c0eaa-727f-4c54-89ec-64c3dfb8002c
 # ╟─92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 # ╟─a003beb6-6235-455c-943a-e381acd00c0e
 # ╟─d0a25025-9309-463f-a09a-9d7ea3df8143
-# ╟─de7a8c16-3048-4952-9185-b2048986c293
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
-# ╠═1bce2d86-cb46-4c44-ab62-b440115bf967
-# ╠═e8aea014-ca38-4cab-86c6-a445e6842bc2
-# ╠═466c6a8b-a3cf-42fe-998f-660d514798d6
+# ╟─8082ce45-6e93-4d98-8f90-79935deadec8
+# ╟─38f3d8cf-21cf-4c77-bd45-a618b9b2e1cd
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
-# ╟─beaec161-ad89-4f83-9066-f420a1d04d39
-# ╟─b21ab60c-df7b-4847-8325-8e9850dfb92d
-# ╟─535261e3-4cb3-4b0b-954d-7452b2a91b5d
-# ╟─c524297f-2bf3-4dd2-b7b4-fc5ce9a81738
-# ╟─c7c8277a-3846-41df-aba2-40c2a7bf5806
-# ╟─052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
-# ╟─02a4098f-a1ee-433c-aea7-8e8fc8a65088
-# ╟─ce99f0cc-5fe8-42c2-af78-ac7211b6b699
-# ╟─61173ec6-c7d6-44fa-8c47-5f7295dd49cf
-# ╟─c102a82b-6a21-4beb-a0bc-f1093b74ae10
 # ╟─f286f3b2-3bac-4384-9b40-522e974a14ee
 # ╟─307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
+# ╟─0e7aa498-3009-4473-a9a7-687cc0835ee4
 # ╟─d0a3770a-2c48-42db-9a71-6b7f695f22d8
+# ╟─6a7b4f2b-187a-40a3-842f-126d220d40ed
+# ╟─97ddd327-94b8-4c2e-a79d-f5304725c25b
+# ╟─9cbf5fa3-664f-418e-a791-124276d9ae24
 # ╟─fda151a1-5069-44a8-baa1-d7903bc89797
-# ╟─a6ac99ee-2894-40d4-8dd5-35d551a0a041
+# ╟─c498c964-9c36-4859-9b43-c203f5aa3390
 # ╟─8c78529c-1e00-472c-bb76-d984b37235ab
 # ╟─daada216-11d4-4f8b-807c-d347130a3928
-# ╟─e61657ef-961b-42af-89d7-e242d477ba1f
-# ╟─1cef8f2a-faee-4709-a0e9-6e5f2e3ce4cd
-# ╟─d18c2105-c2af-4dda-8388-617aa816a567
+# ╟─6ec8a963-726d-4738-9a82-7e0b26b90b16
+# ╟─86f92b1d-87eb-40b0-ad0b-6b888c5fb9cc
+# ╠═0ab3fe4f-a13d-4d92-b3e4-5653f05dafe7
+# ╟─613443b1-ac8b-4570-b4c7-d107d63a36cd
 # ╠═77637b5e-e3ce-4ecd-90fc-95611af18002
 # ╠═c4c0328d-8cb3-41d5-9740-0197cbf760c2
+# ╟─99ccbce1-ac0b-4744-9c26-cb951490f482
+# ╠═022f242e-f839-4b6a-b6ff-6ad3b09470a4
 # ╟─b1e9bd40-a401-4630-9a1f-d61b276e72f7
 # ╠═fe272c1b-421c-49de-a513-80c7bcefdd9b
 # ╟─4ea18122-b681-4de1-89e3-5fb7ce2f7a0b
-# ╟─0915d3d3-1557-44e6-875b-d9fa6ab6bba1
-# ╟─44c8fbe0-21e7-482b-84a9-c3d32a4737dd
-# ╟─f3cf88ca-8569-4e42-a9fc-436637b82364
-# ╟─782a2696-41a7-4bcf-8002-058d18d82840
 # ╟─bac5c489-553c-436f-b332-8a8e97126a51
 # ╟─1da9695f-b7fc-46eb-9ef9-12160246018d
 # ╟─0606d827-9c70-4a79-afa7-14fb6b806546
 # ╟─f180bd3a-12da-4942-b2af-2df2f5887201
 # ╠═cb7b9b9f-59da-4851-ab13-c451c26117df
 # ╟─759534ca-b40b-4824-b7ec-3a5c06cbd23e
-# ╠═1ddf486f-6eb5-4962-a158-e43feaab055b
-# ╟─557f79f0-a4e3-4de9-b2e4-24f3fc307f3b
-# ╟─7987c20d-68e8-441b-bddc-3f0ae7c3591d
+# ╟─97dbe1e4-8045-4213-866f-6921c733fbeb
+# ╟─b1cf81ad-e5cb-40d7-b365-abda3fc67a88
+# ╟─a228c1ac-62cb-4c18-89b9-bda4c3b1c5bb
 # ╟─da2d692a-8378-435e-bd6b-c0e65caef542
 # ╟─23999cd9-543b-47dc-a0b2-e133ba95891e
 # ╟─38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
-# ╟─b417e370-efae-40e8-9247-5daf14fcc749
-# ╟─a1701563-1528-4aac-b7be-bbbb56de374b
+# ╟─b3a79f6d-6d36-4371-a346-607f819d0fe4
+# ╟─7cb60134-6377-4522-8232-6765e2f1f725
+# ╟─50199170-f120-48ee-879c-bbdc11618f1e
+# ╟─428575d2-66a9-4a19-9eb0-cdf9b55277f7
+# ╟─f0b7fd4f-2a76-4329-93d8-91d789c3445c
 # ╟─60ab8107-db65-4fb6-aeea-d4978aed77bd
-# ╟─fa762985-56eb-4ea4-9c91-95731bf6a475
+# ╟─87c29996-943e-43c8-9a85-9f90689a63ae
 # ╟─aa0c4ffc-d7f0-484e-a1e2-7f6f92a3a53d
-# ╟─e189b31e-7e24-4c32-989f-3e600a44d4bc
+# ╟─505c504a-6ce6-474e-9220-95702f909c01
 # ╟─f8ea2983-c2d0-40ea-b949-9fc478ea45f8
-# ╟─155f2bfe-badd-46fe-9d1e-b73099be5e77
-# ╟─82d11960-a4b1-4e7e-9c7e-783351c9bcd5
+# ╟─5aae63b2-54ec-421b-84ec-0d4bc9c00c10
+# ╟─790f1562-d6ff-4c44-b1ea-1b0ab1dced85
+# ╟─b608b8b2-5166-419b-ac4e-18e87c93ac01
+# ╠═05892ece-4c38-4c39-841a-f8b9333ba3ef
 # ╟─7d054465-9f80-4dfb-9b5f-76c3977de7cd
 # ╠═1ec68a39-8de9-4fd3-be8a-26cf7706d1d6
-# ╟─d23f0299-981c-43b9-88f3-fb6e07927498
-# ╠═641b92a3-8ff2-4aed-8482-9fa686803b68
+# ╠═29279d51-1162-4fa8-bdd5-f0ff0e4ef968
+# ╟─005966cb-763d-4346-8fdb-e336a9514e8c
+# ╟─94a5b84a-b942-4317-b255-f49cc13532c6
+# ╠═6a38fe32-d862-4d7d-9978-290a152ae575
+# ╟─7b3f2065-0521-4d89-8125-b9c09565d586
+# ╟─2a81d0a0-a609-4d20-bddb-e5cbe65caf4b
+# ╟─3ae14115-f7d6-495b-a3fa-d13d0b0cdd54
 # ╟─be426908-3fee-4ecd-b054-2497ce9a2e50
 # ╠═258e14c4-9a2d-4515-9a8f-8cd96f31a6ff
-# ╟─f55000b4-ca33-46a7-a776-c3249aa70355
-# ╟─08cdfc42-06c6-4d27-a846-4a0a0809c174
-# ╟─aee22151-51de-426b-8478-6a04284a4888
-# ╟─c22f039c-d7bb-4f7f-9284-cf66906f6390
 # ╟─e3d6fdf1-3a9e-446b-8482-49d6f64b652e
 # ╟─23fd490a-74d2-44b4-8a12-ea1460d95f85
 # ╟─18a70925-3c2a-4317-8bbc-c2a096ec56d0
 # ╟─45c79345-89da-498c-9a98-2ad55a0a6114
-# ╠═3df627c8-72a2-4e34-8109-4fa12f0b6e0d
+# ╠═3471a623-16af-481a-8f66-5bd1e7890188
 # ╟─4c5210d6-598f-4167-a6ee-93bceda7223b
-# ╟─6297f68d-dbd5-4270-b461-d7eb75d61cfd
-# ╠═1428627e-be78-44be-a248-78254a988a52
-# ╟─2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
+# ╟─ef6bf2ba-748e-4f43-ad53-05d1936c2ba9
+# ╟─0a496e93-5853-46bd-a3c5-6f466df90441
+# ╟─ba82b4e4-413c-4b78-a777-85d03e3554f4
+# ╟─ba780732-7aaa-4e09-9c40-304aa62e564b
+# ╠═8cc343cc-f5be-4ff4-802f-adcb6a77674a
+# ╟─b4a0cef4-25f6-4b5d-a739-6f9583d6fb3d
+# ╟─16502371-5139-40de-be3e-0926f55ce405
+# ╟─5c490a85-cff5-46bb-a6fa-330c81d4cd3b
 # ╟─ea2d7eb7-d576-415c-ac4c-fea7f90de637
 # ╟─7c473630-6555-4ada-85f3-0d40aefe6370
 # ╟─7fe1c3d7-469c-47d9-9d46-e5b8b263edb9
 # ╟─f6eb6d1a-a9a0-4234-8699-269a92f666c0
-# ╟─101ab5bc-00f4-4acd-b8b4-f8164d7cb030
+# ╟─28ba58b2-7cae-4d41-8898-307ba09c5fda
+# ╟─571c8a87-fd6d-490d-8a54-ad76f35f0af4
+# ╟─a434dd23-c4d4-498c-9195-10a9c5813e35
+# ╟─b5b95a2e-1b81-4b4a-bf12-38041ff01059
+# ╟─d1443daa-4cd7-4258-be76-c8a4be9778a6
+# ╟─685ead39-822e-4207-9832-940da6a13de8
 # ╟─74aeca7b-0658-427f-8c02-d093a0d725ee
-# ╟─5b1d8594-dd10-44f3-accf-d5060f75c1c8
+# ╟─6bffdf52-4c8d-464e-acad-ec21d528bdbd
 # ╟─dbd088d1-f4c9-4e6a-b280-960b06da76e4
 # ╟─1bb92755-65e3-457e-84cd-252eae5e4d7e
 # ╟─6d5c805b-330c-4b04-a51c-15e674352b1b
@@ -4314,21 +4220,22 @@ version = "1.8.1+0"
 # ╠═cfdba748-45d5-4eaa-97b3-fdc9fe7e4333
 # ╟─6beda870-0cb0-40f5-9531-fa3e2f7bb020
 # ╠═5c3d24f6-0106-444c-b7df-89bba8c01b37
-# ╟─16220c31-ce7d-4cd4-b66a-72527a7623b9
 # ╟─4edc5933-9457-4c7c-8456-a26974e0587e
 # ╟─95e3d42f-b33f-4294-81c5-f34a300dc9b4
 # ╟─ba6c082b-6e62-42fc-a85c-c8b7efc89b88
 # ╟─02fac8f9-b442-40d7-b3f3-415a10570e8e
 # ╟─173388ab-207a-42a6-b364-b2c1cb335f6b
 # ╟─20cb2d9b-ad2d-4d06-be09-03bd5396687a
-# ╟─5563f0da-7552-4879-a38a-ba1748d39d52
 # ╟─98cbe931-d362-4039-97ba-41e0049619a3
+# ╟─5563f0da-7552-4879-a38a-ba1748d39d52
+# ╟─41c6a7e9-48d6-4b87-94a2-f11a6adca655
 # ╟─247f4c17-bee1-4315-aff9-017407ef9219
 # ╟─db7d4de5-9166-4e56-b5bc-1356e43286a9
 # ╟─5a1ed20d-788b-4655-bdd8-069545f48929
+# ╟─70e5bfca-7172-4f21-b3e6-e31ac16c4add
 # ╟─6c8b3077-876e-42fd-aa47-f3fa7c37f4dd
 # ╟─97042a5e-9691-493f-802e-2262f2da4627
 # ╟─9865ed62-b4fd-4e49-9259-3e5997c589f3
-# ╠═ef084fea-bf4d-48d9-9c84-8cc1dd98f2d7
+# ╟─ef084fea-bf4d-48d9-9c84-8cc1dd98f2d7
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

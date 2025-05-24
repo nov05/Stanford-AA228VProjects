@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.8
+# v0.20.4
 
 using Markdown
 using InteractiveUtils
@@ -7,7 +7,7 @@ using InteractiveUtils
 # This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
 macro bind(def, element)
     #! format: off
-    return quote
+    quote
         local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
         local el = $(esc(element))
         global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
@@ -21,12 +21,11 @@ end
 using StanfordAA228V
 
 # ╔═╡ 173388ab-207a-42a6-b364-b2c1cb335f6b
+# ╠═╡ show_logs = false
 begin
 	import MarkdownLiteral: @mdx
 
 	using ProgressLogging
-	using Downloads
-	using TOML
 	using Test
 	using Base64
 	using PlutoUI
@@ -45,41 +44,19 @@ begin
 	md"> _Additional package management._"
 end
 
-# ╔═╡ 54107cf5-8c8f-495f-8709-07b904ca98ae
-md"* Pluto notebook worked on by Nov05 on 2025-05-17  
-* Check [the project documentation](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.jdlp0w7brg0)  
-* Check [the FAQs](https://github.com/nov05/Stanford-AA228VProjects/blob/main/AA228V-FAQs.md)  
-* Check the Julia package \"StanfordAA228V\" [source code](.julia/packages/StanfordAA228V)  
-* Check [the textbook notes](https://docs.google.com/document/d/1HQuiqiCv641d4wJJHPVFQKXwq61u4tUCQKSmEQHSMsk/view?tab=t.qfey2q7ioy3x), e.g. Ctrl+F to search for \"fuzzing\"
-"
-
-# ╔═╡ e7509db7-bc59-4541-a145-cec0fa1b7c7a
-md"**Summary of the notebook:**  
-
-| System                             | Algorithm                                 |
-|:----------------------------------|:------------------------------------------|
-| Small system (1D Gaussian)         | Adaptive importance sampling estimation (Cross entropy method), Bayesian estimation (Beta distribution) |
-| Medium system (Inverted Pendulum)  | Sequential Monte Carlo estimation (aka. Particle filtering) |
-| Large system (Aircraft Collision Avoidance) | - |
-
-"
-
 # ╔═╡ 117d0059-ce1a-497e-8667-a0c2ef20c632
 md"""
-# Project 2: Estimating failure probability
+# Project 1: Finding the most-likely failure
 _Please wait until the entire notebook is finished loading before proceeding (you may get temporary errors)._
 """
 
-# ╔═╡ d7643abe-4619-4859-b2e3-9e932fe53b2f
+# ╔═╡ f8612f4e-8519-4ee3-ac09-80b7c126b238
 highlight(md"""_See the three **"⟶ Task"** sections below for where to fill out the algorithms._""")
-
-# ╔═╡ 78181077-5548-459d-970d-1d8a9d63b72c
-
 
 # ╔═╡ da5b4000-0bce-4fc2-be85-dada21264ca3
 textbook_details([
-	"Chapter 6. _Failure Distribution_",
-	"Chapter 7. _Failure Probability Estimation_"])
+	"Chapter 4. _Falsification through Optimization_",
+	"Chapter 5. _Falsification through Planning_"])
 
 # ╔═╡ 0456a732-2672-4108-a241-db9ae879a913
 
@@ -110,7 +87,7 @@ You can create as many new cells anywhere as you like. Click the `+` icon on the
 	md"""
 After editing a cell, you can run it several ways:
 1. To run the current cell: `<SHIFT+ENTER>`
-1. To run the current cell and create a new one below: `<CTRL+ENTER>` or `<CMD+ENTER>`
+1. To run the current cell and create a new one below: `<CTRL+S>` or `<CMD+S>`
 1. To run all cells with unsaved changes: `<CTRL+S>` or `<CMD+S>`
 	""",
 	html"<h2hide>Multiple lines of code in a cell</h2hide>",
@@ -197,9 +174,6 @@ See the Julia docs for more examples: [https://docs.julialang.org/en/v1/manual/u
 """
 ])
 
-# ╔═╡ 41406be3-4c2d-41db-bdb4-9e2ff875cebe
-highlight(md"Here's the link to the notebook on [Julia and Pluto tips](https://sisl.github.io/AA228VLectureNotebooks/media/html/julia_pluto_session.html).")
-
 # ╔═╡ a21612a1-1092-4892-9132-629833e7c867
 
 
@@ -218,8 +192,13 @@ html_expand("Expand for useful interface functions.", [
 	html"<h3hide><code>NominalTrajectoryDistribution</code></h3hide>",
 	md"""
 **`NominalTrajectoryDistribution(sys::System, d::Int)::TrajectoryDistribution`** — Returns the nominal trajectory distribution for the system `sys` over depth `d`.
-- Use this to evaluate the nominal likelihood of the trajectory.
+- Use this to evaluate the likelihood of the trajectory (using `logpdf` below).
 """,	
+	html"<h3hide><code>logpdf</code></h3hide>",
+	md"""
+**`logpdf(p::TrajectoryDistribution, τ::Vector)::Float64`** — Evaluate the log probability density of the trajectory `τ` using the trajectory distribution `p`.
+- Use `logpdf` instead of `pdf` for numerical stability.
+""",
 	html"<h3hide><code>rollout</code></h3hide>",
 	md"""
 **`rollout(sys::System; d)::Array`** — Run a single rollout of the system `sys` to a depth of `d`.
@@ -243,11 +222,88 @@ end
 - `ψ` is written as `\psi<TAB>` in code.
 """])
 
+# ╔═╡ e888241c-b89f-4db4-ac35-6d826ec4c36c
+html_expand("Expand if using optimization-based falsification.", [
+	html"<h2hide>Robustness and gradients</h2hide>",
+	md"""
+Robustness can be a useful metric to find failures. If the robustness is $\le 0$, this indicates a failure.
+
+- To take a gradient of _robustness_ w.r.t. a trajectory `τ`, you can use `ReverseDiff` like so (where we already load the `ReverseDiff` package for you):
+```julia
+function robustness_gradient(sys, ψ, τ)
+	𝐬 = [step.s for step in τ]
+	f(x) = robustness_objective(x, sys, ψ)
+	return ReverseDiff.gradient(f, 𝐬)
+end
+```
+- For the `robustness_objective` function of:
+```julia
+function robustness_objective(input, sys, ψ; smoothness=1.0)
+	s, 𝐱 = extract(sys.env, input)
+	τ = rollout(sys, s, 𝐱)
+	𝐬 = [step.s for step in τ]
+	return robustness(𝐬, ψ.formula, w=smoothness)
+end
+```
+- You can then evaluate the robustness gradient of a single trajectory like so:
+```julia
+τ = rollout(sys_small)
+robustness_gradient(sys_small, ψ_small, τ)
+```
+- **However**, your objective is not quite to minimize robustness.
+    - **Hint**: You also want to _maximize likelihood_ (i.e., minimize negative likelihood).
+""",
+	html"<h2hide>Optimization-based falsification</h2hide>",
+	md"""
+- If you are using **Optim.jl**, the following options may be helpful (especially `f_calls_limit` for gradient free methods, `g_calls_limit` (typically n÷2) for gradient-based methods, and `iterations`): [https://julianlsolvers.github.io/Optim.jl/v0.9.3/user/config/](https://julianlsolvers.github.io/Optim.jl/v0.9.3/user/config/)
+    - Optim also requires an initial guess `x0`, you can use the following for each environment (see Example 4.5 in the textbook):
+```julia
+x0 = initial_guess(sys::SmallSystem)  # SimpleGaussian
+x0 = initial_guess(sys::MediumSystem) # InvertedPendulum
+x0 = initial_guess(sys::LargeSystem)  # CollisionAvoidance
+
+initial_guess(sys::SmallSystem) = [0.0]
+initial_guess(sys::MediumSystem) = zeros(84)
+initial_guess(sys::LargeSystem) = [rand(Normal(0,100)), 0 0, 40, zeros(39)...]
+```
+- To explain where these numbers came from:
+    - `SmallSystem`: the initial guess is $0$ for the only search parameter: the initial state.
+    - `MediumSystem`: the initial guess is $d \times |x| + |s_0| = 84$ for $d = 41$, $|x| = 2$ (disturbance on both $\theta$ and $\omega$), and $|s_0| = 2$ for both components of the initial state.
+    - `LargeSystem`: the initial guess is $d \times |x| + |\{s_0^{(1)}, s_0^{(2)}\}| = 43$ for $d = 41$, $|x| = 1$ (disturbance is only on the environment), and $|\{s_0^{(1)}, s_0^{(2)}\}| = 2$ for searching only over the $h$ and $\dot{h}$ initial state variables, setting the initial $h$ to $h \sim \mathcal{N}(0, 100)$, the initial $t_\text{col}$ to $40$ and the other initial state variables and initial disturbances to zero.
+- Or you can write your own optimization algorithm :)
+""",
+	html"<h2hide>Details on the <code>extract</code> function</h2hide>",
+	md"""
+- The `extract` function is used to _extract_ the initial state `s` and the set of disturbances `𝐱` (written `\bfx<TAB>`) so that off-the-shelf optimization algorithms (e.g., from Optim.jl) can search over the required variables.
+- The `SimpleGaussian` environment only searches over initial states and has no disturbances.
+```julia
+function extract(env::SimpleGaussian, input)
+	s = input[1]             # Objective is simply over the initial state
+	𝐱 = [Disturbance(0,0,0)] # No disturbances for the SimpleGaussian
+	return s, 𝐱
+end
+```
+- **Note**: We provide the `extract` algorithms for each of the environment types:
+```julia
+s, 𝐱 = extract(env::SimpleGaussian, input)
+s, 𝐱 = extract(env::InvertedPendulum, input)
+s, 𝐱 = extract(env::CollisionAvoidance, input)
+```
+""",
+	html"<h2hide>Differing <code>step</code> calls using Optim.jl</h2hide>",
+	md"""
+Note that the number of function calls `f(x)` output by the Optim results when running `display(results)` may be different than the `stepcount()`.
+
+This is because Optim counts the number of objective function calls `f` and the objective function may run `rollout` (i.e., mulitple calls to `step` based on depth `d`) multiple times.
+
+This is not applicable for the small problem, as the depth is $d=1$."""
+])
+
 # ╔═╡ c4fa9af9-1a79-43d7-9e8d-2854652a4ea2
 html_expand("Stuck? Expand for hints on what to try.", md"""
-$(hint(md"Try importance sampling with your fuzzing distributions! See _Algorithm 7.3_ in the textbook.
+$(hint(md"Try fuzzing! See _Example 4.3_ in the textbook.
 
-_Other techniques_: Bayesian estimation with a good prior, multiple importance sampling, the cross-entropy estimation method, etc. (or something entirely different!?)"))""")
+_Other techniques_: optimization or planning (or something entirely different!?)"))""")
 
 # ╔═╡ 6bad6e8b-c021-41d2-afbb-bcd0242138dd
 
@@ -257,6 +313,26 @@ md"""
 ## Common errors
 These are some common errors you may run into.
 """
+
+# ╔═╡ a0a60728-4ee0-4fd0-bd65-c056956b9712
+html_expand("Expand if you get an error <code>reducing over an empty collection</code>.", md"""
+The following error may occur:
+> **ArgumentError**: reducing over an empty collection is not allowed; consider supplying `init` to the reducer
+
+This is usually because there were no failures found and you are trying to iterate over an empty set. Example: `τs_failures` may be equal to `[]`, resulting in the error:
+```julia
+τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures)
+```
+
+**Potential solution**: Try increasing `m` to sample more rollouts.
+""")
+
+# ╔═╡ b0a4461b-89d0-48ee-9bcf-b544b9f08154
+html_expand("Expand if you're getting <code>NaN</code> likelihood errors.", md"""
+Likelihoods or log-likelihoods equal to `NaN` may be a result of `log(pdf(p, τ))` due to numerical stability issues.
+
+**Instead**, please use `logpdf(p, τ)` instead (better numerical stability).
+""")
 
 # ╔═╡ 109c3d27-2c23-48a7-9fd7-be8a1f359e55
 html_expand("Expand if you're using <code>Normal</code> and/or <code>MvNormal</code>.", md"""
@@ -302,59 +378,8 @@ This code will add a new method for `disturbance_distribution` with the input ty
 This is common in Julia where you need to use the funciton name qualified with the module name. Read more in the ["Namespace Management" section of the Julia docs.](https://docs.julialang.org/en/v1/manual/modules/#namespace-management)
 """)
 
-# ╔═╡ bed9a6ed-3ca0-492d-9141-a34b601ea315
-highlight(md"See the FAQs page for continuously updated tips: [https://github.com/sisl/AA228V-FAQs](https://github.com/sisl/AA228V-FAQs)")
-
 # ╔═╡ a46702a3-4a8c-4749-bd00-52f8cce5b8ee
 html_half_space()
-
-# ╔═╡ 84d9c552-2e78-4922-9ec0-4d12d0c62643
-html_expand("Expand for <code>SmallSystem</code> code.", md"""
-```julia
-## Agent
-struct NoAgent <: Agent end
-(c::NoAgent)(s, a=missing) = nothing
-Distributions.pdf(c::NoAgent, s, x) = 1.0
-
-## Environment
-struct SimpleGaussian <: Environment end
-(env::SimpleGaussian)(s, a, xs=missing) = s
-Ps(env::SimpleGaussian) = Normal(0, 1) # Initial state distribution
-
-## Sensor
-struct IdealSensor <: Sensor end
-
-(sensor::IdealSensor)(s) = s
-(sensor::IdealSensor)(s, x) = sensor(s)
-
-Distributions.pdf(sensor::IdealSensor, s, xₛ) = 1.0
-```
-""")
-
-# ╔═╡ e6e675bf-5181-4e45-8c5d-e576aa411064
-html_expand("Stuck? <span style='color: crimson'>Expand for hints</span>.", hint(md"""If you're trying fuzzing as a proposal distribution, the `disturbance_distribution` for the `SmallSystem` does not apply:
-
-```julia
-D = DisturbanceDistribution((o)->Deterministic(),
-							(s,a)->Deterministic(),
-							(s)->Deterministic())
-```
-where
-```julia
-struct DisturbanceDistribution
-    Da # agent disturbance distribution
-    Ds # environment disturbance distribution
-    Do # sensor disturbance distribution
-end
-```
-but the `initial_state_distribution` should be changed:
-```julia
-function StanfordAA228V.initial_state_distribution(p::YourFuzzingDistribution)
-    return Normal(SOME_MEAN, SOME_STD)
-end
-```
-See _Example 4.3_ in the textbook for how this is applied to the pendulum.
-"""))
 
 # ╔═╡ 17fa8557-9656-4347-9d44-213fd3b635a6
 Markdown.parse("""
@@ -374,8 +399,7 @@ Markdown.MD(
 	- There are no disturbances.
 	- The (initial and only) state $s$ is sampled from $\mathcal{N}(0,1)$.
 	""",
-	depth_highlight(sys_small),
-	md"_(Same small system as Project 1)_"
+	depth_highlight(sys_small)
 )
 
 # ╔═╡ 6f3e24de-094c-49dc-b892-6721b3cc54ed
@@ -407,144 +431,43 @@ i.e., "the state \$s\$ in the trajectory \$\\tau\$ should _always_ (\$\\square\$
 Markdown.parse("""
 A failure is highly unlikely given that the probability of failure is:
 
-\$\$\\begin{align}
-P(\\neg\\psi(\\tau)) &= 1 - P(\\psi(\\tau)) \\\\
-					 &= 1 - P(s > $(ψ_small.formula.ϕ.c)) \\\\
-				     &= P(s < $(ψ_small.formula.ϕ.c)) \\approx $(round(cdf(ps_small, ψ_small.formula.ϕ.c), sigdigits=4))
-\\end{align}\$\$
+\$\$P(\\neg\\psi(\\tau)) = P(s < $(ψ_small.formula.ϕ.c)) \\approx $(round(cdf(ps_small, ψ_small.formula.ϕ.c), sigdigits=4))\$\$
 where \$\\neg\\psi(\\tau)\$ indicates that the specification was violated and \$P\$ is the _cumulative distribution function_ (`cdf` in Julia).
 """)
 
-# ╔═╡ cf42542a-f519-478d-a57e-652c420f4ed5
-
-
-# ╔═╡ b6573f2b-52e5-4881-91e7-759d628bf7fe
+# ╔═╡ 9132a200-f63b-444b-9830-b03cf075021b
 md"""
-## Probability vs. likelihood
-In _Project 1_, you found trajectories that had high **_likelihoods_**, i.e., $p_\theta(\tau)$ where $\theta$ are the parameters of the system (e.g., the mean and std of the simple Gaussian system).
-
-The likelihood measures the **_probability density_** of the "data" (in our case the trajectory $\tau$), given the set of parameters $\theta$ (using `pdf`). Likelihood values are non-negative and must integrate to one:
-
-$$\begin{equation}
-\int_\tau p_\theta(\tau) \mathrm{d}\tau = 1
-\end{equation}$$
-where likelihoods may be much larger than one (e.g., as in the inverted pendulum problem).
+## Random baseline
+The following function is a baseline random falsification algorithm that returns the trajectory that led to the most-likely failure.
 """
 
-# ╔═╡ 9d051b1b-dcf4-418c-988c-37561a10f485
-md" $γ=$ $(@bind γ Slider(-4:0.1:4, show_value=true, default=-1))"
-
-# ╔═╡ a67ea28d-3927-40f9-a049-b9faeb0cfa58
-ψ_cdf = LTLSpecification(@eval @formula □(s->s > $γ));
-
-# ╔═╡ bb4b252d-fc49-49d9-a31b-5092d73dc244
-Markdown.parse("""
-The specification \$\\psi(\\tau) = \\square(s > γ)\$ for the chosen \$γ\$ is \$\\psi(\\tau) = \\square(s > $(ψ_cdf.formula.ϕ.c))\$ where:
-""")
-
-# ╔═╡ 9ea24b88-03b3-434f-a703-af197f754dcd
-Markdown.parse("""
-\$\$\\begin{align}
-p(s) &\\approx $(round(pdf(ps_small, ψ_cdf.formula.ϕ.c), sigdigits=4)) \\tag{probability density} \\\\
-P(s < γ) &\\approx $(round(cdf(ps_small, ψ_cdf.formula.ϕ.c), sigdigits=4)) \\tag{cumulative probability}
-\\end{align}\$\$
-""")
-
-# ╔═╡ 6ea3ba83-ade5-4a19-ad60-b3fe5c56e3b8
-md"""
-### Probability of an event
-In _this_ project, we are now interested in measuring the **_probability_** of an event, where the probability is a value between **zero** and **one**. 
-
-If you have Monte Carlo samples of trajectories from your system, then the naive way to estimate the probability of an event (a failure in our case) would be:
-
-$$\begin{equation}
-\hat{P}_\text{event} = \frac{\text{number of times that event occurred}}{\text{total number of samples}}
-\end{equation}$$
-
-But Monte Carlo estimation can be _super_ inefficient. Therefore, this project is designed for you to explore more sophisticated algorithms to efficiently estimate the probabilty of an event.
-
-_(Note for simple Gaussian problems, we can just use the `cdf` to evaluate this probability exactly, but we randomize the threshold so you cannot access it directly—just to make things more interesting)_
-"""
-
-# ╔═╡ cd2adeb4-493f-4d37-8e0d-9501637c6000
-
-
-# ╔═╡ 42456abf-4930-4b01-afd1-fce3b4881e28
-Markdown.MD(
-	HTML("<h2 id='baseline'>Baseline: Monte Carlo estimate</h2>"),
-	md"""
-The Monte Carlo baseline algorithm will sample $m$ trajectories of depth $d$ from the nominal trajectory distribution and count how many trajectories were a failure.
-
-The frequentist estimate of the failure probability is then computed simply as:
-
-$$\begin{equation}
-\hat{P}_\text{fail} = \frac{\text{number of failures}}{\text{total number of trajectories}}
-\end{equation} = \mathbb{E}_i \Big[ \mathbb{1}\big(\neg\psi(\tau_i)\big) \Big]$$
-
-where $\neg\psi(\tau_i)$ checks if trajectory $\tau_i$ is a failure, `isfailure(τᵢ)`, and $\mathbb{1}$ is the indicator function (but conveniently, Julia treats `true` as `1` and `false` as `0`).
-
-_This is equivalent to `DirectEstimation` (algorithm 7.1)._
-""")
+# ╔═╡ bb3b33e6-fd05-4631-b0bd-c71ef3dbee38
+n_baseline_small = 100
 
 # ╔═╡ cc11217f-e070-4d20-8ebe-18e7eb977487
 highlight(md"""**Note**: You can access the number of `step` calls via `stepcount()`""")
 
+# ╔═╡ a6603deb-57fa-403e-a2e5-1195ae7c016c
+md"""
+Here we plot $100$ states showing which ones were _successes_ and which ones were _failures_.
+
+_(Note that since trajectories for the small problem have depth $1$, each trajectory holds a single state, so here you can think about each of the points below as individual trajectories)._
+"""
+
+# ╔═╡ e52ffc4f-947d-468e-9650-b6c67a57a62b
+html_quarter_space()
+
 # ╔═╡ 92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 Markdown.parse("""
-## ⟶ **Task (Small)**: Estimate failure probability
-Please fill in the following `estimate_probability` function.
+## ⟶ **Task (Small)**: Most-likely failure
+Please fill in the following `most_likely_failure` function.
 """)
 
 # ╔═╡ a003beb6-6235-455c-943a-e381acd00c0e
 start_code()
 
-# ╔═╡ de7a8c16-3048-4952-9185-b2048986c293
-md"✅ Check [my **Bayesian estimation** solution notebook in HTML](https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/project2-small-bayesian.html)." 
-
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
-
-# ╔═╡ 1bce2d86-cb46-4c44-ab62-b440115bf967
-## Nov05: code explanation
-begin
-	println(Ps(sys_small.env)) 
-	println(robustness(-1.9, ψ_small.formula, w=1.0))
-	println(robustness(-2.0, ψ_small.formula, w=1.0))
-	println(robustness(-2.1, ψ_small.formula, w=1.0))
-	local d = get_depth(sys_small)
-	local p = NominalTrajectoryDistribution(sys_small, d)
-	local τs = [rollout(sys_small, p; d) for _ in 1:200]
-	println("There were $(sum(isfailure.(ψ_small, τs))) failures out of 200 rollouts.")
-	println(τs[1][d].s)
-	println("robustness = ", robustness([τ[d].s for τ in τs], ψ_small.formula, w=1.0))
-	# println("p = ", p)
-end
-
-# ╔═╡ e8aea014-ca38-4cab-86c6-a445e6842bc2
-## Nov05: code explanation
-begin
-	struct TestProposalDistribution <: TrajectoryDistribution
-		# Σₒ ## sensor disturbance covariance
-		μ
-		σ
-	end
-	## Function disturbance_distribution() for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::TestProposalDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	function StanfordAA228V.initial_state_distribution(p::TestProposalDistribution)
-		return Normal(p.μ, p.σ)
-	end
-	## increase variance
-	local q = TestProposalDistribution(ps_small.μ, 2000 * ps_small.σ)  
-	local τs = [rollout(sys_small, q; d=1) for _ in 1:10]
-	println("τ = $(τs[1])")
-	println("state = $(τs[1][1].s)")
-end
 
 # ╔═╡ e2418154-4471-406f-b900-97905f5d2f59
 html_quarter_space()
@@ -552,7 +475,7 @@ html_quarter_space()
 # ╔═╡ 1789c8b5-b314-4aba-ad44-555be9a85984
 md"""
 # 📊 Small Tests
-We'll automatically test your `estimate_probability(::SmallSystem, ψ)` function below.
+We'll automatically test your `most_likely_failure(::SmallSystem, ψ)` function below.
 
 **Note**: The next three tests are _only_ local validation tests.
 
@@ -560,92 +483,32 @@ _The **graded** tests to be submitted to Gradescope are located [below](#graded-
 """
 
 # ╔═╡ 535261e3-4cb3-4b0b-954d-7452b2a91b5d
-begin
-	ψ_small_different = LTLSpecification(@formula □(s->s < 2))
+md"""
+## Different failure threshold
+Let's test a different failure threshold.
+"""
 
-	md"""
-	## Different failure threshold
-	Let's test a different failure threshold.
-	"""
-end
+# ╔═╡ 052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
+md"""
+## Random failure threshold
+In most cases, we don't know the _failure distribution_. If we did, we could just sample from it!
 
-# ╔═╡ 02a4098f-a1ee-433c-aea7-8e8fc8a65088
-highlight(md"**Note**: You might fail on some of these specifications. Don't worry, as long as your _average_ estimate over different $\psi$ values is better than random, then the **_graded_** test should pass.")
+In this test, we make sure that your algorithm is robust to random failure thresholds.
+"""
 
 # ╔═╡ ce99f0cc-5fe8-42c2-af78-ac7211b6b699
 @bind rerun_rand_small Button("Click to rerun random test.")
 
+# ╔═╡ 7910c15c-a231-4a0f-a4ed-1fe0b52f62c7
+@bind γ Slider(-3:0.1:3, default=0, show_value=true)
+
+# ╔═╡ cbc3a060-b4ec-4572-914c-e07880dd3537
+md"""
+_You can also click the slider then use the arrow keys for finer control._
+"""
+
 # ╔═╡ fda151a1-5069-44a8-baa1-d7903bc89797
 html_space()
-
-# ╔═╡ e61657ef-961b-42af-89d7-e242d477ba1f
-html_expand("Expand for <code>MediumSystem</code> code.", md"""
-```julia
-## Agent
-struct ProportionalController <: Agent
-    k
-end
-
-(c::ProportionalController)(s, a=missing) = c.k' * s
-
-## Environment
-@with_kw struct InvertedPendulum <: Environment
-    m::Float64 = 1.0
-    l::Float64 = 1.0
-    g::Float64 = 10.0
-    dt::Float64 = 0.05
-    ω_max::Float64 = 8.0
-    a_max::Float64 = 2.0
-end
-
-function (env::InvertedPendulum)(s, a, xs=missing)
-    θ, ω = s[1], s[2]
-    dt, g, m, l = env.dt, env.g, env.m, env.l
-
-    a = clamp(a, -env.a_max, env.a_max)
-
-    ω = ω + (3g / (2 * l) * sin(θ) + 3 * a / (m * l^2)) * dt
-    θ = θ + ω * dt
-    ω = clamp(ω, -env.ω_max, env.ω_max)
-
-    return [θ, ω]
-end
-
-# Initial state distribution
-Ps(env::InvertedPendulum) = MvNormal(zeros(2), diagm([(π/32)^2, 0.5^2]))
-
-## Sensor
-struct AdditiveNoiseSensor <: Sensor
-    Do
-end
-
-(sensor::AdditiveNoiseSensor)(s) = sensor(s, rand(Do(sensor, s)))
-(sensor::AdditiveNoiseSensor)(s, x) = s + x
-
-Do(sensor::AdditiveNoiseSensor, s) = sensor.Do
-
-Os(sensor::AdditiveNoiseSensor) = I
-```
-""")
-
-# ╔═╡ 1cef8f2a-faee-4709-a0e9-6e5f2e3ce4cd
-html_expand("Stuck? <span style='color: crimson'>Expand for hints</span>.", hint(md"""If you're trying fuzzing as a proposal distribution, the `disturbance_distribution` for the `MediumSystem` applies disturbances to the _sensor_:
-
-```julia
-D = DisturbanceDistribution((o)->Deterministic(),
-							(s,a)->Deterministic(),
-							(s)->MvNormal(SOME_MEAN_VECTOR, SOME_COVARIANCE))
-```
-where
-```julia
-struct DisturbanceDistribution
-    Da # agent disturbance distribution
-    Ds # environment disturbance distribution
-    Do # sensor disturbance distribution
-end
-```
-See _Example 4.3_ in the textbook.
-"""))
 
 # ╔═╡ d18c2105-c2af-4dda-8388-617aa816a567
 Markdown.parse("""
@@ -670,8 +533,7 @@ Markdown.MD(
 	- Actions are left/right adjustments in the range $[-2, 2]$
 	- Disturbances $x$ are treated as additive noise: $x \sim \mathcal{N}(\mathbf{0}, 0.1^2I)$
 	""",
-	depth_highlight(sys_medium),
-	md"_(Same medium system as Project 1)_"
+	depth_highlight(sys_medium)
 )
 
 # ╔═╡ c4c0328d-8cb3-41d5-9740-0197cbf760c2
@@ -690,13 +552,52 @@ i.e., "the absolute value of the pendulum angle $\theta$ (first element of the s
 # ╔═╡ fe272c1b-421c-49de-a513-80c7bcefdd9b
 ψ_medium = LTLSpecification(@formula □(s -> abs(s[1]) < π / 4));
 
+# ╔═╡ a16cf110-4afa-4792-9d3f-f13b24349886
+md"""
+## Medium example rollouts
+Example rollouts of the pendulum system and their plot below.
+"""
+
+# ╔═╡ f005da72-d7b5-4f01-8882-ed4e2bdcf4bd
+n_baseline_medium = 41_000
+
+# ╔═╡ d75f34d3-384c-486b-b648-61ef8fd52167
+Markdown.parse("""
+**Large likelihood values.** \$\\,\$ _It's perfectly normal for the likelihood to be extremely large, \$\\exp(\\ell) \\gg 1\$, this is because we're dealing with probablity **density** functions which will **integrate** to one. Don't be alarmed._
+
+_This is particularly apparent when the distribution has **small variance**. Here's an example at \$x = 0\$:_
+```julia
+ pdf(Normal(0, 1e-15), 0) # $(round(pdf(Normal(0, 1e-15), 0), sigdigits=3))
+```
+
+*For the inverted pendulum, the `AdditiveNoiseSensor` is a multivariate Gaussian with mean zeros and diagonal standard deviation of \$\\sigma = \\mathit{0.1}\$. Say the disturbances were \$\\mathit{x_t = [\\!0,0]}\$ for all \$d = \\mathit{41}\$ steps, the trajectory likelihood would be:*
+
+\$\$\\prod_{t=1}^{41} p(x_t) \\quad \\text{where} \\quad x_t \\sim \\mathcal{N}(\\mathbf{0}, 0.1^2I)\$\$
+
+*For the disturbances \$\\mathbf{x} = \\big\\{[0,0], \\ldots, [0,0]\\big\\}\$ (the most-likely values of \$x_t\$), we get the following likelihood:*
+
+```julia
+ prod(pdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41) # $(round(prod(pdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41), sigdigits=3))
+```
+
+_Note that this ignores the initial state distribution._
+
+_But we tend to work with **log likelihoods** to avoid numerical issues with these large magnitude numbers._
+
+\$\$\\sum_{t=1}^{41} \\log p(x_t) \\quad \\text{where} \\quad x_t \\sim \\mathcal{N}(\\mathbf{0}, 0.1^2I)\$\$
+
+```julia
+ sum(logpdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41) # $(round(sum(logpdf(MvNormal(zeros(2), 0.1^2*I), [0,0]) for t in 1:41), digits=3))
+```
+""")
+
 # ╔═╡ bac5c489-553c-436f-b332-8a8e97126a51
 html_quarter_space()
 
 # ╔═╡ 1da9695f-b7fc-46eb-9ef9-12160246018d
 Markdown.parse("""
-## ⟶ **Task (Medium)**: Estimate failure probability
-Please fill in the following `estimate_probability` function.
+## ⟶ **Task (Medium)**: Most-likely failure
+Please fill in the following `most_likely_failure` function.
 """)
 
 # ╔═╡ 0606d827-9c70-4a79-afa7-14fb6b806546
@@ -705,117 +606,17 @@ start_code()
 # ╔═╡ 759534ca-b40b-4824-b7ec-3a5c06cbd23e
 end_code()
 
-# ╔═╡ 1ddf486f-6eb5-4962-a158-e43feaab055b
-## Nov05: code explannation
-println(Ps(sys_medium.env))
-
-# ╔═╡ 557f79f0-a4e3-4de9-b2e4-24f3fc307f3b
-md"ChatGPT: **`FullNormal`** is not a standard type in **`Distributions.jl`**, but it is used in **`POMDPs.jl`** ecosystem (partially observable Markov decision process), specifically in **`POMDPModelTools.jl`**. It is a custom wrapper for a multivariate Gaussian, defined roughly as:
-
-```julia  
-struct FullNormal{T<:Real} <: AbstractMvNormal  
-    μ::Vector{T}  
-    Σ::Matrix{T}  
-end
-```  
-"
-
 # ╔═╡ 7987c20d-68e8-441b-bddc-3f0ae7c3591d
 html_quarter_space()
 
 # ╔═╡ da2d692a-8378-435e-bd6b-c0e65caef542
 md"""
 # 📊 Medium Test
-We'll automatically test your `estimate_probability(::MediumSystem, ψ)` function below.
+We'll automatically test your `most_likely_failure(::MediumSystem, ψ)` function below.
 """
 
 # ╔═╡ 60ab8107-db65-4fb6-aeea-d4978aed77bd
 html_space()
-
-# ╔═╡ 155f2bfe-badd-46fe-9d1e-b73099be5e77
-html_expand("Expand for <code>LargeSystem</code> code.", md"""
-```julia
-## Agent
-struct InterpAgent <: Agent
-    grid::RectangleGrid
-    Q
-end
-
-(c::InterpAgent)(s) = argmax([interpolate(c.grid, q, s) for q in c.Q])
-(c::InterpAgent)(s, x) = c(s)
-
-Distributions.pdf(c::InterpAgent, o, xₐ) = 1.0
-
-## Environment
-@with_kw struct CollisionAvoidance <: Environment
-    ddh_max::Float64 = 1.0 # [m/s²]
-    𝒜::Vector{Float64} = [-5.0, 0.0, 5.0] # [m/s]
-    Ds::Sampleable = Normal(0,1.5)
-end
-
-# NominalTrajectoryDistribution on the environment (D.Ds)
-Ds(env::CollisionAvoidance, s, a) = env.Ds
-
-function (env::CollisionAvoidance)(s, a, x)
-    a = env.𝒜[a]
-
-    h, dh, a_prev, τ = s
-
-    h = h + dh
-
-    if a != 0.0
-        if abs(a - dh) < env.ddh_max
-            dh += a
-        else
-            dh += sign(a - dh) * env.ddh_max
-        end
-    end
-
-    a_prev = a
-    τ = max(τ - 1.0, -1.0)
-
-    return [h, dh + x, a_prev, τ]
-end
-
-(env::CollisionAvoidance)(s, a) = env(s, a, rand(Ds(env, s, a)))
-
-# Initial state distribution
-Ps(env::CollisionAvoidance) = product_distribution(
-	Uniform(-100, 100),                # Initial h
-	Uniform(-10, 10),                  # Initial dh
-	DiscreteNonParametric([0], [1.0]), # Initial a_prev
-	DiscreteNonParametric([40], [1.0]) # Initial τ
-)
-
-## Sensor
-struct IdealSensor <: Sensor end
-
-(sensor::IdealSensor)(s) = s
-(sensor::IdealSensor)(s, x) = sensor(s)
-
-Distributions.pdf(sensor::IdealSensor, s, xₛ) = 1.0
-```
-""")
-
-# ╔═╡ 82d11960-a4b1-4e7e-9c7e-783351c9bcd5
-html_expand("Stuck? <span style='color: crimson'>Expand for hints</span>.", hint(md"""If you're trying fuzzing as a proposal distribution, the `disturbance_distribution` for the `LargeSystem` applies disturbances to the _environment_:
-
-```julia
-D = DisturbanceDistribution((o)->Deterministic(),
-							(s,a)->Normal(SOME_MEAN, SOME_STD),
-							(s)->Deterministic())
-```
-where
-```julia
-struct DisturbanceDistribution
-    Da # agent disturbance distribution
-    Ds # environment disturbance distribution
-    Do # sensor disturbance distribution
-end
-```
-See _Example 4.3_ in the textbook for how this is applied to the pendulum.
-"""))
-
 
 # ╔═╡ 7d054465-9f80-4dfb-9b5f-76c3977de7cd
 Markdown.parse("""
@@ -837,201 +638,114 @@ end
 
 # ╔═╡ 9f739929-1cd3-4935-b229-ae3aeac7e131
 begin
-	ThisProject = Project2
-
-	max_steps(sys::SmallSystem)  = 200
-	max_steps(sys::MediumSystem) = 10_000
-	max_steps(sys::LargeSystem)  = 200_000
-
-	num_seeds(sys::SmallSystem)  = 20
-	num_seeds(sys::MediumSystem) = 5
-	num_seeds(sys::LargeSystem)  = 3
+	global ThisProject = Project1
+	max_steps(sys::SmallSystem)  = 20
+	max_steps(sys::MediumSystem) = 1_000
+	max_steps(sys::LargeSystem)  = 10_000
 end;
 
 # ╔═╡ 60f72d30-ab80-11ef-3c20-270dbcdf0cc4
-Markdown.parse("""
-**Task**: Efficiently estimating the failure probability using \$n\$ total calls to the system `step` function.
-- **Small system**: 1D Gaussian \$\\mathcal{N}(0,1)\$: \$n=$(format(max_steps(sys_small); latex=true))\$ `step` calls and \$$(num_seeds(sys_small))\$ seeds.
-- **Medium system**: Swinging inverted pendulum: \$n=$(format(max_steps(sys_medium); latex=true))\$ `step` calls and \$$(num_seeds(sys_medium))\$ seeds.
-- **Large system**: Aircraft collision avoidance system (CAS): \$n=$(format(max_steps(sys_large); latex=true))\$ `step` calls and \$$(num_seeds(sys_large))\$ seeds.
-
-_(Same systems as Project 1)_
-
-Your job is to write the following function that returns the estimated failure probability:
-```julia
-estimate_probability(sys, ψ; n)::Float64
-```
-and get a better estimate of the failure probability than a random baseline.
-""")
-
-# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
-@tracked function estimate_probability_baseline(sys, ψ; n=max_steps(sys))
-	d = get_depth(sys)
-	m = n ÷ d                                  # Get num. rollouts (\div for ÷)
-	pτ = NominalTrajectoryDistribution(sys, d) # Nominal trajectory distribution
-	τs = [rollout(sys, pτ; d) for _ in 1:m]    # Rollout with pτ, m*d steps
-	return mean(isfailure.(ψ, τs))             # Frequentist estimate of P(fail)
-end
-
-# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
-function run_baseline(sys::System, ψ; seed=4)
-	Random.seed!(seed)
-	pfail = estimate_probability_baseline(sys, ψ)
-	n = stepcount()
-	d = get_depth(sys)
-	return (pfail=pfail, n=n, m=n÷d) # return these variables as a NamedTuple
-end
-
-# ╔═╡ c8c1a321-39c8-4a78-bbcf-13663243c457
-Markdown.MD(
-	Markdown.parse("""
-	### Baseline comparison
-	Unlike _Project 1_, in this project you will be given the same number of `step` calls as the baselines:
-	
-	\$\$\\begin{equation}
-	n_\\text{steps} = $(max_steps(sys_small)) \\tag{for the small system}
-	\\end{equation}\$\$
-
-	Reminder that the number of `step` calls \$n\$ is equal to the number of rollouts \$m\$ for the small system because the rollout depth is \$d=1\$.
-	"""),
-	highlight(md"**Note**: To pass the tests, your $\hat{P}_\text{fail}$ estimate must be better than the baseline on average.")
-)
-
-# ╔═╡ db5c210a-e783-40bf-892d-58a9fe5dfb23
-Markdown.parse("""
-## Average performance
-Because most estimation algorithms are stochastic, we will test your implemented algorithms to get the average \$\\hat{P}_\\text{fail}\$ over \$K = $(num_seeds(sys_small))\$ _random number generator_ (RNG) seeds. Note this specific number of seeds is for the small system, please refer to the other sections for their prescribed number of seeds.
-
-_We will report the mean and standard deviation of your estimates._
-
-**Your mean estimate should be better than random.**
-""")
-
-# ╔═╡ b60c518f-41bb-4abd-b573-d3f8d29f60de
-function aggregate_performance(alg::Function, sys, ψ; seeds=1:num_seeds(sys))
-	estimates = []
-	for seed in seeds
-		Random.seed!(seed)
-		pfail = alg(sys, ψ)
-		push!(estimates, pfail)
-	end
-	return estimates
-end
-
-# ╔═╡ 402c0eaa-727f-4c54-89ec-64c3dfb8002c
-fbaseline(sys,ψ,seeds) =
-	aggregate_performance(estimate_probability_baseline, sys, ψ; seeds);
-
-# ╔═╡ 782a2696-41a7-4bcf-8002-058d18d82840
 begin
-	baseline_μₘ, baseline_σₘ =
-		aggregate_performance(estimate_probability_baseline, sys_medium, ψ_medium);
-	
+	function try_max_steps(sys)
+		try
+			return "\$n = $(format(max_steps(sys); latex=true))\$"
+		catch
+
+			return "**LOADING...**"
+		end
+	end
+
 	Markdown.parse("""
-	### Example aggregate performance for the baseline
-	The aggregate estimated failure probability using the Monte Carlo baseline is:
+	**Task**: Efficiently find likely failures using \$n\$ total function calls to the system `step` function.
+	- **Small system**: 1D Gaussian \$\\mathcal{N}(0,1)\$. With $(try_max_steps(sys_small)) `step` calls.
+	- **Medium system**: Swinging inverted pendulum. With $(try_max_steps(sys_medium)) `step` calls.
+	- **Large system**: Aircraft collision avoidance system (CAS). With $(try_max_steps(sys_large)) `step` calls.
 	
-	\$\$\\begin{equation}
-	\\hat{P}_\\text{fail}^{(\\text{baseline})} \\approx $(baseline_μₘ) \\pm $(round(baseline_σₘ; sigdigits=4))
-	\\end{equation}\$\$
-	
-	_Note that we will test over different RNG seeds than those defaulted above._
+	Your job is to write the following function that returns the failure trajectory `τ` (i.e., a `Vector` of \$(s,a,o,x)\$ tuples) with the highest likelihood you found:
+	```julia
+	most_likely_failure(sys, ψ; n)::Vector{NamedTuple}
+	```
 	""")
 end
 
-# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
-## Cross entropy estimation
-begin
-	struct ImportanceSamplingEstimation
-	    p  # nominal distribution
-	    q  # proposal distribution
-	    m  # number of samples
-	end
-	
-	function estimate(alg::ImportanceSamplingEstimation, sys, ψ)
-	    p, q, m = alg.p, alg.q, alg.m
-	    τs = [rollout(sys, q) for i in 1:m]
-	    ps = [pdf(p, τ) for τ in τs]
-	    qs = [pdf(q, τ) for τ in τs]
-	    ws = ps ./ qs
-	    return mean(w * isfailure(ψ, τ) for (w, τ) in zip(ws, τs))
-	end
-
-	struct CrossEntropyEstimation
-	    p        # nominal trajectory distribution
-	    q₀       # initial proposal distribution
-	    f        # objective function f(τ, ψ)
-	    k_max    # number of iterations
-	    m        # number of samples per iteration
-	    m_elite  # number of elite samples
-	end
-	
-	function estimate(alg::CrossEntropyEstimation, sys::SmallSystem, ψ)
-	    k_max, m, m_elite = alg.k_max, alg.m, alg.m_elite
-	    p, q, f = alg.p, alg.q₀, alg.f
-		d = get_depth(sys)
-	    for _ in 1:k_max
-	        τs = [rollout(sys, q; d) for _ in 1:m]
-	        Y = [f(τ, ψ) for τ in τs]
-	        order = sortperm(Y)
-	        y = max(0, Y[order[m_elite]])
-	        ps = [pdf(p, τ) for τ in τs]
-	        qs = [pdf(q, τ) for τ in τs]
-	        ws = ps ./ qs
-	        ws[Y .> y] .= 0  ## set non-elite weights to zero
-	        q = fit(typeof(q), τs, ws=ws)
-	    end
-		println(" ")
-	    return estimate(ImportanceSamplingEstimation(p, q, m_IS), sys, ψ)
-	end
-
-	struct SmallProposalDistribution <: TrajectoryDistribution
-		μ
-		σ
-	end
-	
-	## Function disturbance_distribution() for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::SmallProposalDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	
-	function StanfordAA228V.initial_state_distribution(p::SmallProposalDistribution)
-		return Normal(p.μ, p.σ)
-	end
-
-	StanfordAA228V.depth(p::SmallProposalDistribution) = get_depth(sys_small)
-	
-	function Distributions.fit(::Type{SmallProposalDistribution}, samples::Vector; ws::Vector)
-	    xs = [τ[1].s for τ in samples] 
-	    p = fit(Normal, xs, ws)
-		println("μ = $(p.μ), σ = $(p.σ)")
-	    return SmallProposalDistribution(p.μ, p.σ)
-	end
-
-	m, m_elite, m_IS = 61, 5, 17  ## mean err = 0.005018
-	@small function estimate_probability(sys::SmallSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		ps = Ps(sys.env)
-		p = NominalTrajectoryDistribution(sys, d)
-		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
-		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
-		k_max = div(n-m_IS, m)
-		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
-	end
+# ╔═╡ d566993e-587d-4aa3-995b-eb955dec5758
+html_expand("Expand for baseline implementation using <code>DirectFalsification</code>.", [
+	html"<h2hide>Using <code>DirectFalsification</code> algorithm</h2hide>",
+	Markdown.parse("""
+We could instead use the `DirectFalsification` algorithm for the small system where instead of using the `NominalTrajectoryDistribution`, we evaluate the pdf directly on the initial state distribution `ps_small`:
+```julia
+struct DirectFalsification
+	d # depth
+	m # number of samples
 end
 
-# ╔═╡ 466c6a8b-a3cf-42fe-998f-660d514798d6
-## Nov05: code explanation. Distributions.jl
-begin
-	println(fit(Normal, [1.0, 2.0, 3.0]))
-	local samples = [randn(3) for _ in 1:100]
-	## fits a multivariate Normal
-	println(fit(MvNormal, hcat(samples...)))  ## 3×100 matrix
+function falsify(alg::DirectFalsification, sys, ψ)
+	d, m = alg.d, alg.m
+	τs = [rollout(sys, d=d) for i in 1:m]
+	return filter(τ->isfailure(ψ, τ), τs)
+end
+
+alg = DirectFalsification(1, $(max_steps(sys_small)))
+τ_failures = falsify(alg, sys_small, ψ_small)
+ℓτ = maximum(s->pdf(ps_small, s[1].s), τ_failures)
+```
+**Note**: _But we want to use the `NominalTrajectoryDistribution` to keep the algorithm general for the medium/large problems that **do** have disturbances._
+""")])
+
+# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
+@tracked function most_likely_failure_baseline(sys, ψ; n=max_steps(sys), full=false)
+	d = get_depth(sys)
+	m = n ÷ d                                          # Get num rollouts, \div for ÷
+	pτ = NominalTrajectoryDistribution(sys, d)         # Trajectory distribution
+	τs = [rollout(sys, pτ; d) for _ in 1:m]            # Rollout with pτ, m*d steps
+	τs_failures = filter(τ->isfailure(ψ, τ), τs)       # Filter to get failure trajs.
+	τ_most_likely = argmax(τ->logpdf(pτ, τ), τs_failures) # Most-likely failure traj
+	return full ? (τ_most_likely, τs) : τ_most_likely     # Return MLF, or all trajs.
+end
+
+# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
+function run_baseline(sys::System, ψ; n, seed=4)
+	Random.seed!(seed)
+	τ, τs = most_likely_failure_baseline(sys, ψ; n, full=true)
+	d = get_depth(sys)
+	p = NominalTrajectoryDistribution(sys, d)
+	ℓ = logpdf(p, τ)
+	n = stepcount()
+	return (τ=τ, τs=τs, ℓ=ℓ, n=n) # return these variables as a NamedTuple
+end
+
+# ╔═╡ 3385fcb3-8b93-4da8-ba75-77877cc77ce4
+baseline_small_results = run_baseline(sys_small, ψ_small; n=n_baseline_small);
+
+# ╔═╡ 73da2a56-8991-4484-bcde-7d397214e552
+Markdown.parse("""
+### Baseline results (small)
+
+\$\$\\begin{align}
+\\ell_\\text{baseline} &= $(round(baseline_small_results.ℓ, digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} &= $(baseline_small_results.n) \\tag{number of \\texttt{step} calls}
+\\end{align}\$\$
+
+Reminder that the number of `step` calls \$n\$ is equal to the number of rollouts \$m\$ for the small system. This is because the rollout depth is \$d=1\$.
+""")
+
+# ╔═╡ 77a6e704-33e8-4241-84f0-0e58c29c06ef
+baseline_medium_results = run_baseline(sys_medium, ψ_medium; n=n_baseline_medium);
+
+# ╔═╡ 7ef66a50-6acc-474f-b406-7b27a7b18510
+Markdown.parse("""
+\$\$\\begin{align}
+\\ell_\\text{baseline} &= $(round(baseline_medium_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} &= $(format(baseline_medium_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
+\\end{align}\$\$
+""")
+
+# ╔═╡ 42456abf-4930-4b01-afd1-fce3b4881e28
+baseline_details(sys_small; n_baseline=n_baseline_small, descr="simple Gaussian", max_steps)
+
+# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
+@small function most_likely_failure(sys::SmallSystem, ψ; n=max_steps(sys))
+	# TODO: WRITE YOUR CODE HERE
 end
 
 # ╔═╡ 307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
@@ -1039,140 +753,18 @@ Markdown.MD(
 	md"""
 $(@bind rerun_small LargeCheckBox(text="⟵ Click to re-run the <code>SmallSystem</code> evaluation."))""",
 	Markdown.parse("""
-	↑ This will re-run **`estimate_probability(::SmallSystem, ψ)`** and re-save **`$(get_filename(sys_small, ThisProject))`**
+	↑ This will re-run **`most_likely_failure(::SmallSystem, ψ)`** and re-save **`$(get_filename(sys_small, ThisProject))`**
 
 	_Uncheck this to load results from the file._
 	""")
 )
 
-# ╔═╡ f3cf88ca-8569-4e42-a9fc-436637b82364
-Markdown.parse("""
-## Average performance
-The failure probability \$\\hat{P}_\\text{fail}\$ is averaged over \$$(num_seeds(sys_medium))\$ _random number generator_ (RNG) seeds.
-
-_We will report the mean and standard deviation of your estimates._
-
-**Your mean estimate should be better than random.**
-""")
+# ╔═╡ 772cf17e-0fdb-470e-9f12-9480af811edd
+baseline_details(sys_medium; n_baseline=n_baseline_medium, descr="pendulum", max_steps)
 
 # ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
-## Sequencial Monte Carlo estimation (particle filtering)
-begin
-	# using StatsBase
-	
-	## Metropolis-Hastings algorithm (MCMC)
-	struct MCMCSampling
-	    p̄       # target density
-	    g       # kernel: τ′ = rollout(sys, g(τ))
-	    τ       # initial trajectory
-	    k_max   # max iterations
-	    m_burnin    # number of samples to discard from burn-in
-	    m_skip      # number of samples to skip for thinning
-	end
-	
-	function sample_failures(alg::MCMCSampling, sys, ψ)
-	    p̄, g, τ = alg.p̄, alg.g, alg.τ
-	    k_max, m_burnin, m_skip = alg.k_max, alg.m_burnin, alg.m_skip
-	    τs = []
-	    for k in 1:k_max
-	        τ′ = rollout(sys, g(τ)) 
-	        if rand() < (p̄(τ′) * pdf(g(τ′), τ)) / (p̄(τ) * pdf(g(τ), τ′))
-	            τ = τ′
-	        end
-	        push!(τs, τ)
-	    end
-	    return τs[m_burnin:m_skip:end]
-	end
-
-	## Pendulum trajectory distribution
-	struct PendulumTrajectoryDistribution <: TrajectoryDistribution
-		μ₁  ## mean of initial state distribution
-		Σ₁  ## covariance of initial state distribution
-		μs  ## vector of sensor disturbance means, length d
-		Σs  ## vector of sensor disturbance covariance, length d
-	end
-	
-	function StanfordAA228V.initial_state_distribution(
-		p::PendulumTrajectoryDistribution)
-	    return MvNormal(p.μ₁, p.Σ₁)
-	end
-	
-	function StanfordAA228V.disturbance_distribution(
-		p::PendulumTrajectoryDistribution, t)
-	    D = DisturbanceDistribution((o)   -> Deterministic(),
-	                                (s,a) -> Deterministic(),
-	                                (s)   -> MvNormal(p.μs[t], p.Σs[t]))
-	    return D
-	end
-	
-	StanfordAA228V.depth(p::PendulumTrajectoryDistribution) = length(p.μs)
-
-	function inverted_pendulum_kernel(τ; Σ=0.05^2 * I) 
-		## sensor disturbance means and variances
-		μs, Σs = [step.x.xo for step in τ], [Σ for _ in τ]
-		return PendulumTrajectoryDistribution(τ[1].s, Σ, μs, Σs)
-	end
-
-	## system specific perturb function
-	function perturb(sys::MediumSystem, ψ, samples, ḡ)
-		new_samples = []
-	    for sample in samples
-			## p̄， g， τ， k_max， m_burnin， m_skip
-	        alg = MCMCSampling(ḡ, inverted_pendulum_kernel, sample,
-	                           k_max, m_burnin, m_skip)
-	        mcmc_samples = sample_failures(alg, sys, ψ)
-	        push!(new_samples, mcmc_samples[end])
-	    end
-	    return new_samples
-	end
-
-	function p̄failure_smooth(ψ, p, τ; ϵ=0.15)
-	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
-	    return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)
-	end
-	
-	struct SequentialMonteCarloEstimation
-	    p           # nominal trajectory distribution
-	    ḡs          # intermediate distributions
-	    perturb     # τs′ = perturb(τs, ḡ)
-	    m           # number of samples
-	end
-
-	function estimate(alg::SequentialMonteCarloEstimation, sys, ψ)
-	    p, ḡs, perturb, m = alg.p, alg.ḡs, alg.perturb, alg.m
-	    τs = [rollout(sys, p) for i in 1:m]
-	    ws = [ḡs[1](τ) / p(τ) for τ in τs]
-		# p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
-	 #    for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
-		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## ⚠️ No hard failure dist
-	        τs′ = perturb(sys, ψ, τs, ḡ)
-	        ws .*= [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs′]
-			println(ws[1:5])
-		    if sum(ws) > 0.0
-		        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)]  ## resample
-				# τs = sample(τs′, Weights(ws), m; replace=true) ## resample
-				ws .= mean(ws)
-		    else
-		        @warn "All weights are zero, skipping resampling"
-		    end
-	    end
-		println("👉 ", mean(ws))
-		println(" ")
-	    return mean(ws) 
-	end
-
-	k_max, m_burnin, m_skip = 5, 1, 1  ## perturb() ⚠️ 
-	@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		p = NominalTrajectoryDistribution(sys, d)
-		## Large ε (close to nominal) → small ε (close to hard failure)  
-		ϵs = [1.0, 0.5, 0.25, 0.19] ## ⚠️
-		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
-		m = 15 ## number of samples ⚠️
-		# return 0.00815588  ## true failure probability
-		return estimate(SequentialMonteCarloEstimation(p, ḡs, perturb, m), sys, ψ)
-	end
+@medium function most_likely_failure(sys::MediumSystem, ψ; n=max_steps(sys))
+	# TODO: WRITE YOUR CODE HERE
 end
 
 # ╔═╡ 38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
@@ -1180,15 +772,16 @@ Markdown.MD(
 	md"""
 $(@bind rerun_medium LargeCheckBox(text="⟵ Click to re-run the <code>MediumSystem</code> evaluation."))""",
 	Markdown.parse("""
-	↑ This will re-run **`estimate_probability(::MediumSystem, ψ)`** and re-save **`$(get_filename(sys_medium, ThisProject))`**
+	↑ This will re-run **`most_likely_failure(::MediumSystem, ψ)`** and re-save **`$(get_filename(sys_medium, ThisProject))`**
 
 	_Uncheck this to load results from the file._
 	""")
 )
 
-# ╔═╡ 4eeaa9ae-eac5-478a-aca5-82de3dda24f7
-submission_details(@bind(directory_trigger, OpenDirectory(@__DIR__)), ThisProject,
-	[SmallSystem, MediumSystem, LargeSystem])
+# ╔═╡ be8c37e8-45db-4198-b0b9-d287e73fb818
+try
+	submission_details(@bind(directory_trigger, OpenDirectory(@__DIR__)), ThisProject, [SmallSystem, MediumSystem, LargeSystem])
+catch end
 
 # ╔═╡ 0c520f93-49ce-45eb-899d-a31105d856c8
 if directory_trigger
@@ -1207,8 +800,7 @@ Markdown.MD(
 	- Disturbances \$x\$ are applied to \$\\dot{h}\$ as environment noise: \$x \\sim \\mathcal{N}(0, 1.5)\$
 	- Finite horizon (i.e., rollout depth) of \$d=$(get_depth(sys_large))\$ for \$t_\\text{col}\$ from \$40-0\$ seconds.
 	"""),
-	depth_highlight(sys_large),
-	md"_(Same large system as Project 1)_"
+	depth_highlight(sys_large)
 )
 
 # ╔═╡ d23f0299-981c-43b9-88f3-fb6e07927498
@@ -1235,224 +827,42 @@ i.e., "the absolute valued relative altitude $h$ (first element of the state $s$
 # ╔═╡ 258e14c4-9a2d-4515-9a8f-8cd96f31a6ff
 ψ_large = LTLSpecification(@formula □(41:41, s->abs(s[1]) > 50));
 
-# ╔═╡ aee22151-51de-426b-8478-6a04284a4888
+# ╔═╡ 3328d818-391a-440a-8f1b-f2b7f3e00958
+n_baseline_large = 410_000
+
+# ╔═╡ 35434537-9b9c-4528-b58c-420d01813598
+baseline_details(sys_large; n_baseline=n_baseline_large, descr="CAS", max_steps)
+
+# ╔═╡ 06b14338-ea3b-45c8-bf6c-28b82db2ea70
+baseline_large_results = run_baseline(sys_large, ψ_large; n=n_baseline_large);
+
+# ╔═╡ 204feed7-cde8-40a8-b6b5-051a1c768fd9
 Markdown.parse("""
-## Average performance
-The failure probability \$\\hat{P}_\\text{fail}\$ is averaged over \$$(num_seeds(sys_large))\$ _random number generator_ (RNG) seeds.
-
-_We will report the mean and standard deviation of your estimates._
-
-**Your mean estimate should be better than random.**
+\$\$\\begin{gather}
+\\ell_\\text{baseline} = $(round(baseline_large_results.ℓ; digits=3))\\tag{failure log-likelihood} \\\\
+n_\\text{steps} = $(format(baseline_large_results.n; latex=true)) \\tag{number of \\texttt{step} calls \$d\\times m\$}
+\\end{gather}\$\$
 """)
-
-# ╔═╡ c22f039c-d7bb-4f7f-9284-cf66906f6390
-begin
-	baseline_μₗ, baseline_σₗ =
-		aggregate_performance(estimate_probability_baseline, sys_large, ψ_large)	
-	
-	Markdown.parse("""
-	### Example aggregate performance for the baseline
-	The aggregate estimated failure probability using the Monte Carlo baseline is:
-	
-	\$\$\\begin{equation}
-	\\hat{P}_\\text{fail}^{(\\text{baseline})} \\approx $(baseline_μₗ) \\pm $(baseline_σₗ)
-	\\end{equation}\$\$
-
-	Notice the high standard deviation! This is because failures are extremely rare for the CAS problem.
-
-	_Note that we will test over different RNG seeds than those defaulted above._
-	""")
-end
 
 # ╔═╡ e3d6fdf1-3a9e-446b-8482-49d6f64b652e
 html_quarter_space()
 
 # ╔═╡ 23fd490a-74d2-44b4-8a12-ea1460d95f85
 Markdown.parse("""
-## ⟶ **Task (Large)**: Estimate failure probability
-Please fill in the following `estimate_probability` function.
+## ⟶ **Task (Large)**: Most-likely failure
+Please fill in the following `most_likely_failure` function.
 """)
 
 # ╔═╡ 18a70925-3c2a-4317-8bbc-c2a096ec56d0
 start_code()
 
-# ╔═╡ 3df627c8-72a2-4e34-8109-4fa12f0b6e0d
-## Bridge sampling estimation
-begin
-	function bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
-	    ḡ₁s, ḡ₂s = ḡ₁.(g₁τs), ḡ₂.(g₂τs)
-	    ḡb₁s, ḡb₂s = ḡb.(g₁τs), ḡb.(g₂τs)
-	    return mean(ḡb₂s ./ ḡ₂s) / mean(ḡb₁s ./ ḡ₁s)
-	end
-	
-	function optimal_bridge(g₁τs, ḡ₁, g₂τs, ḡ₂, k_max)
-	    ratio = 1.0
-	    m₁, m₂ = length(g₁τs), length(g₂τs)
-		ḡb(τ) = (ḡ₁(τ) * ḡ₂(τ)) / (m₁ * ḡ₁(τ) + ratio * m₂ * ḡ₂(τ))
-	    for k in k_max
-	        ratio = bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
-	    end
-	    return ḡb
-	end
-
-	## CAS trajectory distribution
-	struct CASTrajectoryDistribution <: TrajectoryDistribution
-		h1
-		dh1
-		a_prev1
-		τ1
-		μs  ## vector of env disturbance means, length d
-		σs  ## vector of env disturbance deviations, length d
-	end
-	
-	function StanfordAA228V.initial_state_distribution(
-		p::CASTrajectoryDistribution)
-	    return product_distribution(
-	        Uniform(p.h1 - 1e-6, p.h1 + 1e-6),          ## Initial h
-	        Uniform(p.dh1 - 1e-6, p.dh1 + 1e-6),        ## Initial dh
-	        DiscreteNonParametric([p.a_prev1], [1.0]),  ## Initial a_prev
-	        DiscreteNonParametric([p.τ1], [1.0])        ## Initial τ
-		)
-	end
-	
-	function StanfordAA228V.disturbance_distribution(
-		p::CASTrajectoryDistribution, t)
-	    D = DisturbanceDistribution((o)   -> Deterministic(),
-	                                (s,a) -> Normal(p.μs[t], p.σs[t]),
-	                                (s)   -> Deterministic())
-	    return D
-	end
-	
-	StanfordAA228V.depth(p::CASTrajectoryDistribution) = length(p.μs)
-	
-	function cas_kernel(τ; σ=0.01) 
-		h1, dh1, a_prev1, τ1 = τ[1].s  ## Initial state components
-		## environment disturbance
-		μs, σs = [step.x.xs for step in τ], [σ for _ in τ]
-		return CASTrajectoryDistribution(h1, dh1, a_prev1, τ1, μs, σs)
-	end
-	
-	function perturb(sys::LargeSystem, ψ, samples, ḡ)
-		new_samples = []
-	    for sample in samples
-			## p̄， g， τ， k_max， m_burnin， m_skip
-	        alg = MCMCSampling(ḡ, cas_kernel, sample,
-	                           k_max, m_burnin, m_skip)
-	        mcmc_samples = sample_failures(alg, sys, ψ)
-	        push!(new_samples, mcmc_samples[end])
-	    end
-	    return new_samples
-	end
-	
-	struct BridgeSamplingEstimation
-	    p       # nominal trajectory distribution
-	    ḡs      # intermediate distributions
-	    perturb # τ′ = perturb(τ, ḡ′)
-	    m       # number of samples from each intermediate distribution
-	    kb      # number of iterations for estimating optimal bridge
-	end
-
-	function estimate(alg::BridgeSamplingEstimation, sys, ψ)
-	    p, ḡs, perturb, m, kb = alg.p, alg.ḡs, alg.perturb, alg.m, alg.kb
-	    p̄fail = 1.0
-		τs = [rollout(sys, p) for i in 1:m]
-		p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure distribution
-	    for (ḡ, ḡ′) in zip([p; ḡs...], [ḡs...; p̄failure])
-			# println("👉 ḡ -> $ḡ")
-			# for τ in τs
-			#     println("👉 ḡ′(τ) = ", ḡ′(τ), ", ḡ(τ) = ", ḡ(τ))
-			# end
-	        ws = [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs]
-		    if sum(ws) > 0.0
-		        τs′ = τs[rand(Categorical(ws ./ sum(ws)), m)]  ## resample
-		    else
-				τs′ = τs
-		        # @warn "All weights are zero or NaN, skipping resampling"
-		    end
-	        τs′ = perturb(sys, ψ, τs′, ḡ′)
-	        ḡb = optimal_bridge(τs′, ḡ′, τs, ḡ, kb)
-	        ratio = bridge_sampling_estimator(τs′, ḡ′, τs, ḡ, ḡb)
-	        p̄fail *= ratio
-	        τs = τs′
-	    end
-	    return p̄fail 
-	end
-
-	function p̄failure_smooth_large(ψ, p, τ; ϵ=0.15)
-	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
-		Δ = min(Δ, 10.0)
-		println("👉 logpdf(Normal(0, ϵ), Δ) = $(logpdf(Normal(0, ϵ), Δ))")
-		println("   logpdf(p, τ) = $(logpdf(p, τ))")
-	    # return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)   ## underflow problem
-		return logpdf(Normal(0, ϵ), Δ) + logpdf(p, τ)
-	end
-
-	@large function estimate_probability(sys::LargeSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		p = NominalTrajectoryDistribution(sys, d)
-		m, kb = 10, 10 ## ⚠️
-		ϵs = [1.0, 0.5, 0.2, 0.1, 0.01] ## ⚠️
-		ḡs = [τ -> p̄failure_smooth_large(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
-		# return 0.00018285333333333334  ## true failure probability
-		return estimate(BridgeSamplingEstimation(p, ḡs, perturb, m, kb), sys, ψ)
-	end
+# ╔═╡ 3471a623-16af-481a-8f66-5bd1e7890188
+@large function most_likely_failure(sys::LargeSystem, ψ; n=max_steps(sys))
+	# TODO: WRITE YOUR CODE HERE
 end
 
 # ╔═╡ 4c5210d6-598f-4167-a6ee-93bceda7223b
 end_code()
-
-# ╔═╡ 6297f68d-dbd5-4270-b461-d7eb75d61cfd
-md"
-Nov05: code explanation  
-```julia
-# Initial state distribution
-Ps(env::CollisionAvoidance) = product_distribution(
-    Uniform(-100, 100),                # Initial h
-    Uniform(-10, 10),                  # Initial dh
-    DiscreteNonParametric([0], [1.0]), # Initial a_prev
-    DiscreteNonParametric([40], [1.0]) # Initial τ
-)
-## println(Ps(sys_large.env))
-Distributions.ProductDistribution{
-    1, 0,
-    Tuple{
-        Distributions.Uniform{Float64},
-        Distributions.Uniform{Float64},
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        },
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        }
-    },
-    Distributions.Continuous,
-    Float64
-}(
-    dists: (
-        Distributions.Uniform{Float64}(a = -100.0, b = 100.0),
-        Distributions.Uniform{Float64}(a = -10.0, b = 10.0),
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        }(support = [0], p = [1.0]),
-        Distributions.DiscreteNonParametric{
-            Int64, Float64, Vector{Int64}, Vector{Float64}
-        }(support = [40], p = [1.0])
-    ),
-    size: (4,)
-)
-
-```  
-"
-
-# ╔═╡ 1428627e-be78-44be-a248-78254a988a52
-## Nov05: code explanation
-begin
-	p = NominalTrajectoryDistribution(sys_medium, get_depth(sys_medium))
-	println(rollout(sys_medium, p)[end])
-	p = NominalTrajectoryDistribution(sys_large, get_depth(sys_large))
-	println(rollout(sys_large, p)[20])
-end
 
 # ╔═╡ 2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
 html_quarter_space()
@@ -1460,7 +870,7 @@ html_quarter_space()
 # ╔═╡ ea2d7eb7-d576-415c-ac4c-fea7f90de637
 md"""
 # 📊 Large Test
-We'll automatically test your `estimate_probability(::LargeSystem, ψ)` function below.
+We'll automatically test your `most_likely_failure(::LargeSystem, ψ)` function below.
 """
 
 # ╔═╡ 7fe1c3d7-469c-47d9-9d46-e5b8b263edb9
@@ -1468,7 +878,7 @@ Markdown.MD(
 	md"""
 $(@bind rerun_large LargeCheckBox(text="⟵ Click to re-run the <code>LargeSystem</code> evaluation."))""",
 	Markdown.parse("""
-	↑ This will re-run **`estimate_probability(::LargeSystem, ψ)`** and re-save **`$(get_filename(sys_large, ThisProject))`**
+	↑ This will re-run **`most_likely_failure(::LargeSystem, ψ)`** and re-save **`$(get_filename(sys_large, ThisProject))`**
 
 	_Uncheck this to load results from the file._
 	""")
@@ -1480,57 +890,256 @@ html_half_space()
 # ╔═╡ 6d5c805b-330c-4b04-a51c-15e674352b1b
 html_quarter_space()
 
-# ╔═╡ cfdba748-45d5-4eaa-97b3-fdc9fe7e4333
-𝐰 = [1,10,100]
-
 # ╔═╡ 860ec509-3a86-4842-9471-6b1a0b8f366d
-Markdown.parse("""
-## Comparing failure probabilities
-Since the failure probabilities across the three problems vary widely in range, we weight the errors using the weights \$\\mathbf{w} = [$(𝐰[1]),$(𝐰[2]),$(𝐰[3])]\$ (normalized to sum to one):
+md"""
+## Comparing likelihoods
+Since the likelihoods across the three problems vary widely in range, we compute the log-likelihoods of your trajectories and take the difference of logs between the _most-likely trajectory_ (i.e., the mean trajectory $\tau_\text{mean}$). The most-likely trajectory is simply the trajectory rolled-out with the mean initial state and mean disturbances.
 
-\$\$\\bar{w_i} = \\frac{w_i}{\\sum_j w_j}\$\$
+The score for problem $k$ is then computed as:
 
-""")
+$$\begin{gather}
+\text{score}_k = \log \left( \frac{p(\tau)}{p(\tau_\text{mean})} \right) = \log p(\tau) - \log p(\tau_\text{mean})
+\end{gather}$$
+
+_The maximum possible score is $0$ (but is impossible as the mean trajectories are not failures for these systems)._
+"""
+
+# ╔═╡ 54741d81-39e0-4a47-b84d-c41c8eb7611b
+function score(sys::System, τ)
+	ps = NominalTrajectoryDistribution(sys, get_depth(sys))
+	τ_mean = mean_rollout(sys, ps)
+	ℓ_mean = logpdf(ps, τ_mean)
+	ℓ = logpdf(ps, τ)
+	return ℓ - ℓ_mean
+end
+
+# ╔═╡ 6559cf16-a474-4533-a2c7-ccbc02480a76
+md"""
+Since the small system runs several tests, we take the average score over the tests:
+
+$$\begin{gather}
+\text{score}_\text{small} = \mathbb{E}_i \left[ \log\left( \frac{p(\tau_i)}{p(\tau_\text{mean})} \right) \right]
+\end{gather}$$
+
+To balance out the difficulty, we use weights $\mathbf{w} = [1,2,3]$ (normalized to sum to one):
+
+$$\bar{w_i} = \frac{w_i}{\sum_j w_j}$$
+"""
+
+# ╔═╡ cfdba748-45d5-4eaa-97b3-fdc9fe7e4333
+𝐰 = [1,2,3]
 
 # ╔═╡ 6beda870-0cb0-40f5-9531-fa3e2f7bb020
 md"""
 The final score on the leaderboard is then a weighted sum:
 
 $$\begin{gather}
-\mathbf{s} = \big[\text{err}_\text{small},\, \text{err}_\text{medium},\, \text{err}_\text{large} \big] \\
+\mathbf{s} = \big[\text{score}_\text{small},\, \text{score}_\text{medium},\, \text{score}_\text{large} \big] \\
 \text{score} = \mathbf{w}^\top\mathbf{s}
 \end{gather}$$
-
-_The minimum possible score is $0$, **where smaller values are better.**_
 """
 
 # ╔═╡ 5c3d24f6-0106-444c-b7df-89bba8c01b37
-function leaderboard_scores(𝐬, 𝐰=ones(length(τs)))
+function leaderboard_scores(systems::Vector{<:System}, τs; 𝐰=ones(length(τs)))
+	score_small = mean(score(systems[1], τ) for τ in τs[1])
+	score_medium = score(systems[2], τs[2])
+	score_large = score(systems[3], τs[3])
+	𝐬 = [score_small, score_medium, score_large]
 	𝐰 = 𝐰 ./ sum(𝐰)
 	return 𝐰'𝐬
 end
 
-# ╔═╡ 16220c31-ce7d-4cd4-b66a-72527a7623b9
-Markdown.parse("""
-## True failure probabilities
-To generate the "true" failure probablities for the _medium_ and _large_ problems, we ran large-scale Monte Carlo simulations (using `estimate_probability_baseline` from the [Baseline](#baseline) section).
-- **Medium**: Ran using \$n = $(format(41*25_000_000; latex=true))\$ steps, i.e., \$m = $(format(25_000_000; latex=true))\$ rollouts.
-- **Large**: Ran using \$n = $(format(41*75_000_000; latex=true))\$ steps, i.e., \$m = $(format(75_000_000; latex=true))\$ rollouts.
-
-_This was run on an Ubuntu server with about `530 GB` of RAM over `127` cores._
-""")
-
 # ╔═╡ 4edc5933-9457-4c7c-8456-a26974e0587e
 html_half_space()
 
-# ╔═╡ 20cb2d9b-ad2d-4d06-be09-03bd5396687a
+# ╔═╡ 38b64ee2-5372-4374-80e8-fbf203021a61
+begin
+	function GridInterpolations.interpolants(grid::RectangleGrid, x::AbstractVector)
+	    if any(isnan, x)
+	        throw(DomainError("Input contains NaN!"))
+	    end
+	    cut_counts = grid.cut_counts
+	    cuts = grid.cuts
+	
+	    # Reset the values in index and weight:
+	    num_points = 2^dimensions(grid)
+	    index = Vector{Int}(undef, num_points)
+	    index2 = Vector{Int}(undef, num_points)
+	    weight = Vector{eltype(x)}(undef, num_points)
+	    weight2 = Vector{eltype(x)}(undef, num_points)
+	
+	    # Note: these values are set explicitly because we have not verified that the logic below is independent of the initial values. See discussion in PR #47. These can be removed if it can be proved that the logic is independent of the initial values.
+	    index .= 1
+	    index2 .= 1
+	    weight .= zero(eltype(weight))
+	    weight2 .= zero(eltype(weight2))
+	
+	    weight[1] = one(eltype(weight))
+	    weight2[1] = one(eltype(weight2))
+	
+	    l = 1
+	    subblock_size = 1
+	    cut_i = 1
+	    n = 1
+	    for d = 1:length(x)
+	        coord = x[d]
+	        lasti = cut_counts[d] + cut_i - 1
+	        ii = cut_i
+	
+	        if coord <= cuts[ii]
+	            i_lo, i_hi = ii, ii
+	        elseif coord >= cuts[lasti]
+	            i_lo, i_hi = lasti, lasti
+	        else
+	            while cuts[ii] < coord
+	                ii = ii + 1
+	            end
+	            if cuts[ii] == coord
+	                i_lo, i_hi = ii, ii
+	            else
+	                i_lo, i_hi = (ii - 1), ii
+	            end
+	        end
+	
+	        # the @inbounds are needed below to prevent allocation
+	        if i_lo == i_hi
+	            for i = 1:l
+	                @inbounds index[i] += (i_lo - cut_i) * subblock_size
+	            end
+	        else
+	            low = (1 - (coord - cuts[i_lo]) / (cuts[i_hi] - cuts[i_lo]))
+	            for i = 1:l
+	                @inbounds index2[i] = index[i] + (i_lo - cut_i) * subblock_size
+	                @inbounds index2[i+l] = index[i] + (i_hi - cut_i) * subblock_size
+	            end
+	            @inbounds index[:] = index2
+	            for i = 1:l
+	                @inbounds weight2[i] = weight[i] * low
+	                @inbounds weight2[i+l] = weight[i] * (1 - low)
+	            end
+	            @inbounds weight[:] = weight2
+	            l = l * 2
+	            n = n * 2
+	        end
+	        cut_i = cut_i + cut_counts[d]
+	        subblock_size = subblock_size * (cut_counts[d])
+	    end
+	
+	    v = min(l, length(index))
+	    return view(Vector(index), 1:v), view(Vector(weight), 1:v)
+	end
+	
+	function GridInterpolations.interpolants(grid::SimplexGrid, x::AbstractVector)
+	
+	    weight = Vector{eltype(x)}(undef, dimensions(grid) + 1)
+	    index = Vector{Int}(undef, dimensions(grid) + 1)
+	
+	    x_p = grid.x_p # residuals
+	    ihi = grid.ihi # indicies of cuts above point
+	    ilo = grid.ilo # indicies of cuts below point
+	    n_ind = grid.n_ind
+	
+	    cut_counts = grid.cut_counts
+	    cuts = grid.cuts
+	
+	    cut_i = 1
+	
+	    for i = 1:dimensions(grid)
+	        # find indicies of coords if match
+	        coord = x[i]
+	        lasti = cut_counts[i] + cut_i - 1
+	        ii = cut_i
+	        # check bounds, snap to closest if out
+	        if coord <= cuts[ii]
+	            ihi[i] = ii
+	            ilo[i] = ii
+	            x_p[i] = zero(eltype(x))
+	        elseif coord >= cuts[lasti]
+	            ihi[i] = lasti
+	            ilo[i] = lasti
+	            x_p[i] = zero(eltype(x))
+	        else
+	            # increment through cut points if in bounds
+	            while cuts[ii] < coord
+	                ii += 1
+	            end
+	            # if on cut assign cut indecies
+	            if cuts[ii] == coord
+	                ilo[i] = ii
+	                ihi[i] = ii
+	                x_p[i] = zero(eltype(x))
+	            else
+	                # if between cuts assign lo and high indecies and translate
+	                ilo[i] = ii - 1
+	                ihi[i] = ii
+	                lo = cuts[ilo[i]]
+	                hi = cuts[ihi[i]]
+	                x_p[i] = (x[i] - lo) / (hi - lo)
+	            end
+	        end
+	        cut_i = cut_i + cut_counts[i]
+	    end
+	
+	    # initialize sort indecies
+	    for i = 1:length(n_ind)
+	        n_ind[i] = i
+	    end
+	    # sort translated and scaled x values
+	    sortperm!(n_ind, x_p, rev=true) ############################################# killer of speed
+	    x_p = x_p[n_ind]
+	    n_ind = n_ind .- 1
+	
+	    # get weight
+	    for i = 1:(length(x_p)+1)
+	        if i == 1
+	            weight[i] = 1 - x_p[i]
+	        elseif i == length(x_p) + 1
+	            weight[i] = x_p[i-1]
+	        else
+	            weight[i] = x_p[i-1] - x_p[i]
+	        end
+	    end
+	
+	    # get indices
+	    fill!(index, 0)
+	    i_index = 0
+	    for i = 1:(length(x_p)+1)
+	        siz = 1
+	        ct = 0
+	        good_count = 1
+	        if i > 1
+	            i_index = i_index + 2^(n_ind[i-1])
+	        end
+	        for k = 1:length(x)
+	            onHi = ((i_index & good_count) > 0)
+	            good_count <<= 1
+	            if onHi
+	                index[i] += (ihi[k] - 1 - ct) * siz
+	            else
+	                index[i] += (ilo[k] - 1 - ct) * siz
+	            end
+	            siz = siz * cut_counts[k]
+	            ct += cut_counts[k]
+	        end
+	        index[i] += 1
+	    end
+	
+	    weight = weight ./ sum(weight)
+	
+	    return SVector(index), SVector(weight)
+	end
+
+	md"> _GridInterpolations changes for ReverseDiff._"
+end
+
+# ╔═╡ 50f1c7a3-9219-40ce-a060-77beb243b7af
 begin
 	function task_description(sys, details)
 		return Markdown.parse(
 		"""
-			estimate_probability(sys::$(system_name(sys)), ψ; n)::Float64
+			most_likely_failure(sys::$(system_name(sys)), ψ; n)::Vector{NamedTuple}
 		
-		A function that takes in a system `sys` ($details) and a specification `ψ` and **returns the estimate probability of failure**.
+		A function that takes in a system `sys` ($details) and a specification `ψ` and **returns the trajectory that led to the most-likely failure**.
 		
 		- `n` = number of `step` calls allotted (\$n = $(format(max_steps(sys); latex=true))\$ for `$(system_name(sys))`)
 		
@@ -1538,38 +1147,13 @@ begin
 		""")
 	end
 
-	mean_and_std(X::Vector) = (mean(X), std(X))
-end; md"> _Project 2 specific functions._"
+	md"> _Project 1 specific functions._"
+end
 
-# ╔═╡ 66309827-bd01-417b-bf14-0240805139ca
-baseline_μₛ, baseline_σₛ = let
-	baseline_small =
-		aggregate_performance(estimate_probability_baseline, sys_small, ψ_small)
-	mean_and_std(baseline_small)
-end;
-
-# ╔═╡ aced4250-12be-41ca-8caf-bc660e2d629b
-Markdown.parse("""
-### Example aggregate performance for the baseline
-The aggregate estimated failure probability using the Monte Carlo baseline is:
-
-\$\$\\begin{equation}
-\\mathbb{E}_k\\left[\\hat{P}_\\text{fail}^{(\\text{baseline})}\\right] \\approx $(baseline_μₛ) \\pm $(round(baseline_σₛ; sigdigits=4))
-\\end{equation}\$\$
-
-where the _true_ probability of failure of the simple Gaussian system is:
-
-\$\$\\begin{equation}
-P_\\text{fail}^{(\\text{truth})} = $(cdf(ps_small, ψ_small.formula.ϕ.c))
-\\end{equation}\$\$
-
-_Note that we will test over \$K\$ different RNG seeds than those defaulted above._
-""")
-
-# ╔═╡ d0a25025-9309-463f-a09a-9d7ea3df8143
+# ╔═╡ f6589984-e24d-4aee-b7e7-db159ae7fea6
 task_description(sys_small, "1D Gaussian for the _small_ setting")
 
-# ╔═╡ f180bd3a-12da-4942-b2af-2df2f5887201
+# ╔═╡ 9657f5ff-f21c-43c5-838d-402a2a723d5e
 task_description(sys_medium, "inverted pendulum for the _medium_ setting")
 
 # ╔═╡ 45c79345-89da-498c-9a98-2ad55a0a6114
@@ -1690,15 +1274,14 @@ try
 	end
 catch end
 
-# ╔═╡ 02fac8f9-b442-40d7-b3f3-415a10570e8e
+# ╔═╡ 5aef09eb-ddc5-4b99-abf2-568621b871d5
+# ╠═╡ show_logs = false
 begin
 	DarkModeHandler.setdarkmode!(dark_mode)
 
 	import StanfordAA228V:
 		Always, Predicate, FlippedPredicate,
-		plot, plot!, plot_cdf, plot_pendulum,
-		plot_cas_lookahead, plot_pfail_histogram
-		# import plotting for dark_mode triggers
+		plot, plot!, plot_cdf, plot_pendulum # dark_mode triggers
 
 	import StanfordAA228V.SignalTemporalLogic: ρ
 
@@ -1710,16 +1293,42 @@ begin
 	md"> _AA228V/CS238V package management._"
 end
 
-# ╔═╡ 8469fe70-8cf6-43c1-b16b-d4b970a2c807
+# ╔═╡ 7e9405c4-1d1d-4cfa-9fab-a3471c8ad119
 separator()
 
-# ╔═╡ a6ac99ee-2894-40d4-8dd5-35d551a0a041
+# ╔═╡ e29b6ddd-d3da-4122-a561-18bc267e2047
 separator()
 
-# ╔═╡ fa762985-56eb-4ea4-9c91-95731bf6a475
+# ╔═╡ 44c8fbe0-21e7-482b-84a9-c3d32a4737dd
+plot(sys_medium, ψ_medium, baseline_medium_results.τs; max_lines=100)
+
+# ╔═╡ e12b102e-785b-46e9-980c-e9f7943eda60
+begin
+	plot(
+		begin
+			plot(sys_medium, ψ_medium, baseline_medium_results.τs; max_lines=100)
+			plot!(title="All baseline trajectories", titlefontsize=12)
+		end,
+		begin
+			plot(sys_medium, ψ_medium, baseline_medium_results.τ)
+			plot!(title="Most-likely failure found", titlefontsize=12)
+		end,
+		layout=(1,2),
+		margin=5Plots.mm,
+		topmargin=-5Plots.mm,
+	)
+end
+
+# ╔═╡ e86fb6e9-edcd-459b-b1fb-7338bb54d6c4
 separator()
 
-# ╔═╡ 5b1d8594-dd10-44f3-accf-d5060f75c1c8
+# ╔═╡ 797cbe41-a5f3-4179-9143-9ef6e6888a4d
+plot(sys_large, ψ_large, baseline_large_results.τs)
+
+# ╔═╡ 4ae85f59-4e94-48aa-8ccb-91311466c51f
+plot(sys_large, ψ_large, baseline_large_results.τ)
+
+# ╔═╡ 36b510f5-31a2-4c94-9705-cd66e98e2e61
 separator()
 
 # ╔═╡ 95e3d42f-b33f-4294-81c5-f34a300dc9b4
@@ -1743,14 +1352,12 @@ begin
 	pkg_trigger
 
 	global UsingThisViolatesTheHonorCode = @load ThisProject.backend
-	Div = UsingThisViolatesTheHonorCode.Div
-	divcenter = UsingThisViolatesTheHonorCode.divcenter
 	create_specification = UsingThisViolatesTheHonorCode.create_specification
 	ψ2latex = UsingThisViolatesTheHonorCode.ψ2latex
+	small_extras = UsingThisViolatesTheHonorCode.small_extras
 	rerun = UsingThisViolatesTheHonorCode.rerun
 	rerun_multiple = UsingThisViolatesTheHonorCode.rerun_multiple
-	run_baseline_mlf = UsingThisViolatesTheHonorCode.run_baseline_mlf
-	run_aggregate_baseline = UsingThisViolatesTheHonorCode.run_aggregate_baseline
+	centered = UsingThisViolatesTheHonorCode.centered
 
 	md"""
 	# Backend
@@ -1759,117 +1366,80 @@ begin
 end
 
 # ╔═╡ e86d260f-c93d-4561-a9f1-44e4c7af827e
-Div(plot(sys_small, ψ_small); style=divcenter)
+centered(plot(sys_small, ψ_small))
 
-# ╔═╡ a607813d-c76c-4a5a-9474-a1d8588b671b
-Div(plot(
-	begin
-		plot(sys_small, ψ_cdf)
-		plot!(legend=:best,
-			  title="Probability density function",
-			  titlefontsize=10)
-	end,
-	begin
-		plot_cdf(sys_small, ψ_cdf)
-		plot!(legend=:best,
-			  ylabel="\$P(s < c)\$",
-			  title="Cumulative distribution function",
-			  titlefontsize=10)
-	end; size=(800,200), margin=4Plots.mm); style=divcenter)
+# ╔═╡ d4d057d7-cc9d-4949-9e3f-44a8aa67d725
+centered(begin
+	plot(sys_small, ψ_small, baseline_small_results.τ)
+	title!("Baseline most-likely failure found")
+end)
 
 # ╔═╡ fe7f4a79-1a63-4272-a776-358a309c8550
-begin
-	function baseline_trajectories(sys, ψ; n=max_steps(sys), seed=4)
-		Random.seed!(seed)
-		d = get_depth(sys)
-		m = n ÷ d                                  # Get num. rollouts (\div for ÷)
-		pτ = NominalTrajectoryDistribution(sys, d) # Nominal trajectory distribution
-		return [rollout(sys, pτ; d) for _ in 1:m]  # Rollout with pτ, m*d steps
-	end
-
-	baseline_small_results = run_baseline(sys_small, ψ_small);
-
-	let τs = baseline_trajectories(sys_small, ψ_small)
-		Div(begin
-			plot(sys_small, ψ_small, τs)
-			title!("States from Monte Carlo baseline")
-		end; style=divcenter)
-	end
-end
-
-# ╔═╡ 73da2a56-8991-4484-bcde-7d397214e552
-Markdown.parse("""
-### Baseline results (small)
-
-The Monte Carlo estimate with \$n_\\text{step}\$ of \$$(max_steps(sys_small))\$ is:
-
-\$\$\\begin{gather}
-\\hat{P}_\\text{fail} = \\frac{$(Int(baseline_small_results.pfail*baseline_small_results.m))}{$(baseline_small_results.m)} = $(round(baseline_small_results.pfail, digits=5))\\tag{failure probability estimate}
-\\end{gather}\$\$
-This can be interpreted from the following plot as:
-
-\$\\frac{\\text{number of }\\, {\\color{red}\\bullet}\\, \\text{ states}}{\\text{number of }\\, {\\color{red}\\bullet}\\, \\text{ states} + \\text{number of }\\, {\\color{forestgreen}\\bullet}\\, \\text{ states}}\$
-
-_Where in the small problem, trajectories consist of a single state (because \$d = $(get_depth(sys_small))\$)._
-""")
-
-# ╔═╡ b21ab60c-df7b-4847-8325-8e9850dfb92d
-baseline_small = run_aggregate_baseline(sys_small, ψ_small);
+centered(begin
+	plot(sys_small, ψ_small, baseline_small_results.τs)
+	title!("States from baseline")
+end)
 
 # ╔═╡ beaec161-ad89-4f83-9066-f420a1d04d39
 rerun(sys_small, ψ_small;
-	  save=false, f=estimate_probability_small,
-	  baseline=baseline_small,
-	  project=ThisProject,
-	  latextras=ψ2latex(sys_small, ψ_small))[3]
-
-# ╔═╡ c7c8277a-3846-41df-aba2-40c2a7bf5806
-baseline_small_different = run_aggregate_baseline(sys_small, ψ_small_different);
+	  save=false, f=most_likely_failure_small,
+	  project=ThisProject, latextras=small_extras(sys_small, ψ_small))[3]
 
 # ╔═╡ c524297f-2bf3-4dd2-b7b4-fc5ce9a81738
 begin
+	ψ_small_different = LTLSpecification(@formula □(s->s < 2))
+	latextras_different = small_extras(sys_small, ψ_small_different)
 	rerun(sys_small, ψ_small_different;
-	      f=estimate_probability_small,
-		  baseline=baseline_small_different,
-		  project=ThisProject,
-		  latextras=ψ2latex(sys_small, ψ_small_different),
-		  save=false)[3]
+	      f=most_likely_failure_small, save=false,
+		  project=ThisProject, latextras=latextras_different)[3]
 end
-
-# ╔═╡ 052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
-begin
-	rerun_rand_small # trigger
-	ψ_small_rand = create_specification()
-
-	md"""
-	## Random failure threshold
-	In most cases, we don't know the _failure distribution_. If we did, we could just sample from it!
-	
-	In this test, we make sure that your algorithm is robust to random failure thresholds.
-	"""
-end
-
-# ╔═╡ c102a82b-6a21-4beb-a0bc-f1093b74ae10
-baseline_small_rand = run_aggregate_baseline(sys_small, ψ_small_rand);
 
 # ╔═╡ 61173ec6-c7d6-44fa-8c47-5f7295dd49cf
 begin
-	rand_𝐏ₛ, _, rand_logₛ, _ = rerun(sys_small, ψ_small_rand;
-	      f=estimate_probability_small,
-		  baseline=baseline_small_rand,
-		  project=ThisProject,
-		  latextras=ψ2latex(sys_small, ψ_small_rand),
-		  save=false)
-	rand_logₛ
+	rerun_rand_small # trigger
+	ψ_small_rand = create_specification()
+	latextras_rand = small_extras(sys_small, ψ_small_rand)
+	rerun(sys_small, ψ_small_rand;
+	      f=most_likely_failure_small, save=false,
+		  project=ThisProject, latextras=latextras_rand)[3]
+end
+
+# ╔═╡ 57d321cd-2029-4e49-8b56-9c5c48721ac4
+ψ_small_slider = create_specification(γ);
+
+# ╔═╡ d647ac21-738b-43e7-bbbd-582b6294560e
+Markdown.parse("""
+## Slider to control threshold
+If your `most_likely_failure` function for the small system is fast enough, you can explore how it performs when controlling the failure threshold \$γ\$ (we flip the comparison operator when \$γ > 0\$):
+
+\$\$$(ψ2latex(sys_small, ψ_small_slider))\$\$
+""")
+
+# ╔═╡ b61b8f52-9bf3-4766-9208-3e40134a3573
+try
+	global τ_small_slider = most_likely_failure_small(sys_small, ψ_small_slider)
+	global ℓ_small_slider = logpdf(NominalTrajectoryDistribution(sys_small), τ_small_slider)
+	Markdown.parse("""
+	\$\$\\begin{gather}
+	\\ell_\\text{truth} = $(logpdf(Normal(), ψ_small_slider.formula.ϕ.c)) \\tag{true MLF log-likelihood} \\\\
+	\\ell = $ℓ_small_slider \\tag{failure log-likelihood} \\\\
+	n_\\text{steps} = $(stepcount()) \\tag{number of \\texttt{step} calls}
+	\\end{gather}\$\$""")
+catch end
+
+# ╔═╡ 57c5a6f0-2527-4988-9bf0-140495ba9b7e
+if !isnothing(τ_small_slider)
+	centered(plot(sys_small, ψ_small_slider, τ_small_slider))
+else
+	almost(md"*Slider plot will show when issues are fixed with `most_likely_failure` above*")
 end
 
 # ╔═╡ d0a3770a-2c48-42db-9a71-6b7f695f22d8
 begin
-	𝐏_small, log_small, pass_small, error_small = rerun_multiple(sys_small;
-		f=estimate_probability_small,
-		run=rerun_small,
-		fbaseline,
-		project=ThisProject)
+	τs_small, log_small, pass_small = rerun_multiple(sys_small;
+		                                             f=most_likely_failure_small,
+												     run=rerun_small, 
+												     project=ThisProject)
 	log_small
 end
 
@@ -1884,48 +1454,16 @@ begin
 	
 	Markdown.MD(HTML("<h2 id='graded-test'>$(pass ? "✅" : "❌") Graded small test ($(pass ? "$(ThisProject.points_small)/$(ThisProject.points_small)" : "0/$(ThisProject.points_small)") points)</h2>"),
 		md"""
-	✳️ **If the following tests pass, then you're finished with the small problem.**
+	**If the following tests pass, then you're finished with the small problem.**
 	
 	We'll test multiple failure thresholds in the specification $\psi$. Make sure the above 'randon test' works well across different failure thresholds to ensure this will pass.""")
 end
 
-# ╔═╡ 44c8fbe0-21e7-482b-84a9-c3d32a4737dd
-begin
-	baseline_medium_results = run_baseline(sys_medium, ψ_medium; seed=1);
-
-	let τs = baseline_trajectories(sys_medium, ψ_medium; seed=1)
-		Div(begin
-			plot(sys_medium, ψ_medium, τs; max_lines=max_steps(sys_medium)÷get_depth(sys_medium), max_lines_include_failure=true)
-		end; style=divcenter)
-	end
-end
-
-# ╔═╡ 0915d3d3-1557-44e6-875b-d9fa6ab6bba1
-Markdown.parse("""
-## Baseline: Medium
-
-The Monte Carlo baseline estimate with \$n_\\text{step}\$ of \$$(format(max_steps(sys_medium); latex=true))\$ which equates to \$\\lfloor{n/d}\\rfloor = $(max_steps(sys_medium)÷get_depth(sys_medium))\$ rollouts is:
-
-\$\$\\begin{gather}
-\\hat{P}_\\text{fail} = \\frac{$(Int(baseline_medium_results.pfail*baseline_medium_results.m))}{$(baseline_medium_results.m)} = $(round(baseline_medium_results.pfail, digits=5))\\tag{failure probability estimate}
-\\end{gather}\$\$
-This can be interpreted from the following plot as:
-
-\$\\frac{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories}}{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories} + \\text{number of }\\, {\\color{forestgreen}━}\\, \\text{ trajectories}}\$
-
-""")
-
-# ╔═╡ a1701563-1528-4aac-b7be-bbbb56de374b
-baseline_medium = run_aggregate_baseline(sys_medium, ψ_medium);
-
 # ╔═╡ b417e370-efae-40e8-9247-5daf14fcc749
 begin
-	𝐏_medium, counts_medium, log_medium, pass_medium, error_medium =
-		rerun(sys_medium, ψ_medium;
-			  f=estimate_probability_medium,
-			  baseline=baseline_medium,
-			  project=ThisProject,
-			  run=rerun_medium)
+	τ_medium, _, log_medium, pass_medium = rerun(sys_medium, ψ_medium;
+											  f=most_likely_failure_medium,
+											  run=rerun_medium, project=ThisProject)
 	log_medium
 end
 
@@ -1942,45 +1480,11 @@ begin
 	""")
 end
 
-# ╔═╡ 08cdfc42-06c6-4d27-a846-4a0a0809c174
-begin
-	baseline_large_results = run_baseline(sys_large, ψ_large; seed=1);
-
-	let τs = baseline_trajectories(sys_large, ψ_large; seed=1)
-		max_lines = 150
-		Markdown.MD(
-			Div(plot(sys_large, ψ_large, τs; max_lines=150); style=divcenter),
-			Markdown.parse("_Note we are only plotting \$$max_lines\$ lines out of the \$$(max_steps(sys_large)÷get_depth(sys_large))\$._")
-		)
-	end
-end
-
-# ╔═╡ f55000b4-ca33-46a7-a776-c3249aa70355
-Markdown.parse("""
-## Baseline: Large
-
-The Monte Carlo baseline with \$n_\\text{step}\$ of \$$(format(max_steps(sys_large); latex=true))\$ which equates to \$\\lfloor{n/d}\\rfloor = $(max_steps(sys_large)÷get_depth(sys_large))\$ rollouts is:
-
-\$\$\\begin{gather}
-\\hat{P}_\\text{fail} = \\frac{$(round(Int, baseline_large_results.pfail*baseline_large_results.m))}{$(baseline_large_results.m)} = $(round(baseline_large_results.pfail, digits=5))\\tag{failure probability estimate}
-\\end{gather}\$\$
-This can be interpreted from the following plot as:
-
-\$\\frac{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories}}{\\text{number of }\\, {\\color{red}━}\\, \\text{ trajectories} + \\text{number of }\\, {\\color{forestgreen}━}\\, \\text{ trajectories}}\$
-
-""")
-
-# ╔═╡ 101ab5bc-00f4-4acd-b8b4-f8164d7cb030
-baseline_large = run_aggregate_baseline(sys_large, ψ_large);
-
 # ╔═╡ f6eb6d1a-a9a0-4234-8699-269a92f666c0
 begin
-	𝐏_large, counts_large, log_large, pass_large, error_large =
-		rerun(sys_large, ψ_large;
-			  f=estimate_probability_large,
-			  baseline=baseline_large,
-			  project=ThisProject,
-			  run=rerun_large)
+	τ_large, _, log_large, pass_large = rerun(sys_large, ψ_large;
+										   f=most_likely_failure_large,
+										   run=rerun_large, project=ThisProject)
 	log_large
 end
 
@@ -1998,57 +1502,112 @@ begin
 end
 
 # ╔═╡ dbd088d1-f4c9-4e6a-b280-960b06da76e4
-Markdown.MD(Markdown.parse("# $(all([pass_small, pass_medium, pass_large]) ? "✅" : "❌") Final Check"),
-@mdx("""If the following test indicator is <span style='color:#759466'><b>green</b></span>, you can submit to Gradescope."""))
+begin
+	local passes = falses(3)
+	try
+		passes = [pass_small, pass_medium, pass_large]
+	catch end
+	Markdown.MD(Markdown.parse("# $(all(passes) ? "✅" : "❌") Final Check"),
+	@mdx("""If the following test indicator is <span style='color:#759466'><b>green</b></span>, you can submit to Gradescope."""))
+end
 
 # ╔═╡ 1bb92755-65e3-457e-84cd-252eae5e4d7e
-if all([pass_small, pass_medium, pass_large])
-	correct(Markdown.MD(md"""
-All tests have passed, **_you're done with Project 1!_**""",
-@mdx("""
-|  System  |  Passed?  |  Points  |
-| :------: | :-------: | :------: |
-| Small | $(pass_small ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(pass_small ? "$(Project2.points_small)/$(Project2.points_small)" : "0/$(Project2.points_small)") |
-| Medium | $(pass_medium ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(pass_medium ? "$(Project2.points_medium)/$(Project2.points_medium)" : "0/$(Project2.points_medium)") |
-| Large | $(pass_large ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(pass_large ? "$(Project2.points_large)/$(Project2.points_large)" : "0/$(Project2.points_large)") |
-"""),
-md"""
-**📩 Please see the [Submission](#submission) section at the top of the page.**
-"""))
-else
-	almost(Markdown.MD(md"**_Some tests have failed:_**", @mdx("""
-|  System  |  Passed?  | Points |
-| :------: | :-------: | :----: |
-| Small | $(pass_small ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(pass_small ? "$(Project2.points_small)/$(Project2.points_small)" : "0/$(Project2.points_small)") |
-| Medium | $(pass_medium ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(pass_medium ? "$(Project2.points_medium)/$(Project2.points_medium)" : "0/$(Project2.points_medium)") |
-| Large | $(pass_large ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(pass_large ? "$(Project2.points_large)/$(Project2.points_large)" : "0/$(Project2.points_large)") |
-"""),
-md"""
-_Please fix the above failing tests before submission._
+begin
+	local passes = falses(3)
 
-_You may partially submit individual `.val` files to Gradescope, you have unlimited Gradescope submissions until the deadline. But please make sure to submit all **three** `.val` files once complete._"""))
+	try
+		passes[1] = pass_small
+	catch end
+
+	try
+		passes[2] = pass_medium
+	catch end
+
+	try
+		passes[3] = pass_large
+	catch end
+
+	if all(passes)
+		correct(Markdown.MD(md"""
+	All tests have passed, **_you're done with Project 1!_**""",
+	@mdx("""
+	|  System  |  Passed?  |  Points  |
+	| :------: | :-------: | :------: |
+	| Small | $(passes[1] ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(passes[1] ? "$(ThisProject.points_small)/$(ThisProject.points_small)" : "0/$(ThisProject.points_small)") |
+	| Medium | $(passes[2] ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(passes[2] ? "$(ThisProject.points_medium)/$(ThisProject.points_medium)" : "0/$(ThisProject.points_medium)") |
+	| Large | $(passes[3] ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(passes[3] ? "$(ThisProject.points_large)/$(ThisProject.points_large)" : "0/$(ThisProject.points_large)") |
+	"""),
+	md"""
+	**📩 Please see the [Submission](#submission) section at the top of the page.**
+	"""))
+	else
+		almost(Markdown.MD(md"**_Some tests have failed:_**", @mdx("""
+	|  System  |  Passed?  | Points |
+	| :------: | :-------: | :----: |
+	| Small | $(passes[1] ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(passes[1] ? "$(ThisProject.points_small)/$(ThisProject.points_small)" : "0/$(ThisProject.points_small)") |
+	| Medium | $(passes[2] ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(passes[2] ? "$(ThisProject.points_medium)/$(ThisProject.points_medium)" : "0/$(ThisProject.points_medium)") |
+	| Large | $(passes[3] ? HTML("<span style='color:#759466'><b>Passed!</b></span>") : HTML("<span style='color:#B83A4B'><b>Failed.</b></span>")) | $(passes[3] ? "$(ThisProject.points_large)/$(ThisProject.points_large)" : "0/$(ThisProject.points_large)") |
+	"""),
+	md"""
+	_Please fix the above failing tests before submission._
+	
+	_You may partially submit individual `.val` files to Gradescope, you have unlimited Gradescope submissions until the deadline. But please make sure to submit all **three** `.val` files once complete._"""))
+	end
 end
 
 # ╔═╡ d9ab8278-eb76-4a36-aa0e-4ec74704f5e0
 begin
-	global user_score = -Inf	
+	negative_infinity = -1e228
+
+	function check_inf(score)
+		if isinf(score)
+			negative_infinity, negative_infinity
+		else
+			score, rd(score)
+		end
+	end
+
+	global 𝔼_logpdf_small = 𝔼_logpdf_small_rd = "—"
 	try
-		global user_score =
-			leaderboard_scores([error_small, error_medium, error_large], 𝐰)
+		global 𝔼_logpdf_small, 𝔼_logpdf_small_rd =
+			check_inf(mean(log_likelihood(sys_small, τ) for τ in τs_small))
 	catch end
+
+	global logpdf_medium = logpdf_medium_rd = "—"
+	try
+		global logpdf_medium, logpdf_medium_rd =
+			check_inf(log_likelihood(sys_medium, τ_medium))
+	catch end
+
+	global logpdf_large = logpdf_large_rd = "—"
+	try
+		global logpdf_large, logpdf_large_rd =
+			check_inf(log_likelihood(sys_large, τ_large))
+	catch end
+
+	global user_score = user_score_rd = "—"
+	try
+		global user_score, user_score_rd = 
+			check_inf(leaderboard_scores(
+				[sys_small, sys_medium, sys_large],
+				[τs_small, τ_medium, τ_large]; 𝐰=𝐰))
+	catch end
+
 
 	Markdown.parse("""
 # Leaderboard
-If the above tests pass, then you will receive full credit for your submission on Gradescope under the **`"Project $(ThisProject.project_num) (.val files + .jl file)"`** assignment.
+If the above tests pass, then you will receive full credit for your submission on Gradescope under the **`"Project 1 (.val files + .jl file)"`** assignment.
 
-_However_, we have a leaderboard so that students can participate in a friendly competition to find the best estimate of the failure probability for each problem.
+_However_, we have a leaderboard so that students can participate in a friendly competition to find the most-likely failures for each problem.
 	
 ## Leaderboard entry
-Your leaderboard entry on Gradescope should look something like this (smaller is better):
+Your leaderboard entry on Gradescope should look something like this:
 
-| Rank | Submission Name | Score | 𝔼[err(small)] | err(medium) | err(large) |
+| Rank | Submission Name | Score | 𝔼[log 𝑝(small)] | log 𝑝(medium) | log 𝑝(large) |
 | :--: | :-------------: | :---: | :-----------: | :------------: | :-----------: |
-| —    | $(guess_username()) | $(rd(user_score)) | $(rd(error_small)) | $(rd(error_medium)) | $(rd(error_large)) |
+| — | $(guess_username()) | $(user_score_rd) | $(𝔼_logpdf_small_rd) | $(logpdf_medium_rd) | $(logpdf_large_rd) |
+
+_Note, if any of the scores are \$-\\infty\$, then they will show up as \$$(expnum(negative_infinity))\$ (a Gradescope quirk)._
 """)
 end
 
@@ -2057,22 +1616,19 @@ begin
 	pendulum_gif_name = dark_mode ? "pendulum-dark.gif" : "pendulum.gif"
 
 	if false
-		let
-			results = run_baseline_mlf(sys_medium, ψ_medium; n=41_000)
-			pendulum_anim = @animate for t in 1:get_depth(sys_medium)
-				θ_medium_failure = rad2deg(results.τ[t].s[1])
-				θ_medium_success = rad2deg(results.τs[2][t].s[1])
-				plot(
-					plot_pendulum(θ_medium_failure; title="Failure"),
-					plot_pendulum(θ_medium_success; title="Success"),
-					layout=(1,2),
-					size=(700,300),
-					dpi=400,
-				)
-			end
-
-			gif(pendulum_anim, joinpath(@__DIR__, "..", "media", pendulum_gif_name); fps=15, show_msg=false)
+		pendulum_anim = @animate for t in 1:get_depth(sys_medium)
+			θ_medium_failure = rad2deg(baseline_medium_results.τ[t].s[1])
+			θ_medium_success = rad2deg(baseline_medium_results.τs[2][t].s[1])
+			plot(
+				plot_pendulum(θ_medium_failure; title="Failure"),
+				plot_pendulum(θ_medium_success; title="Success"),
+				layout=(1,2),
+				size=(700,300),
+				dpi=400,
+			)
 		end
+
+		gif(pendulum_anim, joinpath(@__DIR__, "..", "media", pendulum_gif_name); fps=15, show_msg=false)
 	end
 
 	md"> _Inverted pendulum animated GIF._"
@@ -2083,42 +1639,34 @@ try LocalResource(joinpath(@__DIR__, "..", "media", pendulum_gif_name)) catch en
 
 # ╔═╡ 98cbe931-d362-4039-97ba-41e0049619a3
 begin
-	cas_la_gif_name = dark_mode ? "cas-lookahead-dark.gif" : "cas-lookahead.gif"
-	cas_la_fps = 15
-	cas_la_repeat = cas_la_fps # Repeat last frame x times
-	cas_n_lookahead = 1000
+	cas_gif_name = dark_mode ? "cas-dark.gif" : "cas.gif"
+	cas_fps = 15
+	cas_repeat = cas_fps # Repeat last frame x times
 
 	if false
-		cas_la_anim_T = 1:get_depth(sys_large)
-		cas_la_anim_T = vcat(cas_la_anim_T, fill(cas_la_anim_T[end], cas_la_repeat))
-		cas_la_anim_τ = baseline_large_results_mlf.τ
-		cas_la_anim_τs_lookaheads, cas_la_anim_pfails, cas_la_anim_pfails_var =
-			precompute_cas_lookaheads(sys_large, ψ_large, cas_la_anim_τ;
-									  n_lookahead=cas_n_lookahead,
-									  show_progress=true)
-		cas_la_anim = @withprogress name="gif" begin
-			@animate for (i,t) in enumerate(cas_la_anim_T)
-				plot_cas_lookahead(sys_large, ψ_large;
-					τ=cas_la_anim_τ, τs=cas_la_anim_τs_lookaheads,
-					pfails=cas_la_anim_pfails, pfails_var=cas_la_anim_pfails_var,
-					t=t, max_lines=cas_n_lookahead, fα=0.5, sα=0.05)
-				@logprogress i/length(cas_la_anim_T)
-			end
+		cas_anim_T = 1:get_depth(sys_large)
+		cas_anim_T = vcat(cas_anim_T, fill(cas_anim_T[end], cas_repeat))
+		cas_anim = @animate for t in cas_anim_T
+			plot(
+				plot(sys_large, ψ_large, baseline_large_results.τ; t=t, title="CAS: Failure"),
+				plot(sys_large, ψ_large, baseline_large_results.τs[1234]; t=t, title="CAS: Success"),
+				layout=(1,2), dpi=300)
 		end
-		
-		gif(cas_la_anim, joinpath(@__DIR__, "..", "media", cas_la_gif_name); fps=cas_la_fps, show_msg=false)
+
+		gif(cas_anim, joinpath(@__DIR__, "..", "media", cas_gif_name); fps=cas_fps, show_msg=false)
+
+		function n_minimum_robustness(τs, ψ, n)
+			ρs = [robustness([step.s for step in τ], ψ.formula) for τ in τs]
+			perm = sortperm(ρs)
+			return reverse(perm[1:n])
+		end
 	end
 
-	md"> _Collision avoidance lookahead animated GIF._"
+	md"> _Collision avoidance animated GIF._"
 end
 
 # ╔═╡ e189b31e-7e24-4c32-989f-3e600a44d4bc
-try LocalResource(joinpath(@__DIR__, "..", "media", cas_la_gif_name)) catch end
-
-# ╔═╡ f8ea2983-c2d0-40ea-b949-9fc478ea45f8
-Markdown.parse("""
-The figure above shows the _state depended_ failure probability over \$$(cas_n_lookahead)\$ lookahead trajectories.
-""")
+try LocalResource(joinpath(@__DIR__, "..", "media", cas_gif_name)) catch end
 
 # ╔═╡ 97042a5e-9691-493f-802e-2262f2da4627
 Markdown.MD(notebook_style(), md"> _Notebook styling._")
@@ -2135,7 +1683,6 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
-Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 GridInterpolations = "bb4c363b-b914-514b-8517-4eb369bc008a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MarkdownLiteral = "736d6165-7244-6769-4267-6b50796e6954"
@@ -2147,12 +1694,11 @@ ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 StanfordAA228V = "6f6e590e-f8c2-4a21-9268-94576b9fb3b1"
-TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
 BSON = "~0.3.9"
-Distributions = "~0.25.117"
+Distributions = "~0.25.115"
 GridInterpolations = "~1.2.1"
 MarkdownLiteral = "~0.1.1"
 Optim = "~1.10.0"
@@ -2161,31 +1707,16 @@ Plots = "~1.40.9"
 PlutoUI = "~0.7.60"
 ProgressLogging = "~0.1.4"
 ReverseDiff = "~1.15.3"
-StanfordAA228V = "~0.1.16"
+StanfordAA228V = "~0.1.22"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.5"
+julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "91538048e08f7fd4297122351360ee0fbc7dca09"
-
-[[deps.ADTypes]]
-git-tree-sha1 = "e2478490447631aedba0823d4d7a80b2cc8cdb32"
-uuid = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
-version = "1.14.0"
-
-    [deps.ADTypes.extensions]
-    ADTypesChainRulesCoreExt = "ChainRulesCore"
-    ADTypesConstructionBaseExt = "ConstructionBase"
-    ADTypesEnzymeCoreExt = "EnzymeCore"
-
-    [deps.ADTypes.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
-    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
+project_hash = "f20fac971195dcd2201decc798f06a70644f597d"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -2206,13 +1737,12 @@ version = "1.3.2"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
-git-tree-sha1 = "f7817e2e585aa6d924fd714df1e2a84be7896c60"
+git-tree-sha1 = "50c3c56a52972d78e8be9fd135bfb91c9574c140"
 uuid = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
-version = "4.3.0"
-weakdeps = ["SparseArrays", "StaticArrays"]
+version = "4.1.1"
+weakdeps = ["StaticArrays"]
 
     [deps.Adapt.extensions]
-    AdaptSparseArraysExt = "SparseArrays"
     AdaptStaticArraysExt = "StaticArrays"
 
 [[deps.AliasTables]]
@@ -2227,9 +1757,9 @@ version = "1.1.2"
 
 [[deps.ArrayInterface]]
 deps = ["Adapt", "LinearAlgebra"]
-git-tree-sha1 = "bebb10cd3f0796dd1429ba61e43990ba391186e9"
+git-tree-sha1 = "017fcb757f8e921fb44ee063a7aafe5f89b86dd1"
 uuid = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
-version = "7.18.1"
+version = "7.18.0"
 
     [deps.ArrayInterface.extensions]
     ArrayInterfaceBandedMatricesExt = "BandedMatrices"
@@ -2263,27 +1793,19 @@ version = "1.11.0"
 
 [[deps.Atomix]]
 deps = ["UnsafeAtomics"]
-git-tree-sha1 = "b5bb4dc6248fde467be2a863eb8452993e74d402"
+git-tree-sha1 = "c3b238aa28c1bebd4b5ea4988bebf27e9a01b72b"
 uuid = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
-version = "1.1.1"
+version = "1.0.1"
 
     [deps.Atomix.extensions]
     AtomixCUDAExt = "CUDA"
     AtomixMetalExt = "Metal"
-    AtomixOpenCLExt = "OpenCL"
     AtomixoneAPIExt = "oneAPI"
 
     [deps.Atomix.weakdeps]
     CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
     Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
-    OpenCL = "08131aa3-fb12-5dee-8b74-c09406e224a2"
     oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
-
-[[deps.AxisAlgorithms]]
-deps = ["LinearAlgebra", "Random", "SparseArrays", "WoodburyMatrices"]
-git-tree-sha1 = "01b8ccb13d68535d73d2b0c23e39bd23155fb712"
-uuid = "13072b0f-2c55-5437-9ae7-d433b7a33950"
-version = "1.1.0"
 
 [[deps.BSON]]
 git-tree-sha1 = "4c3e506685c527ac6a54ccc0c8c76fd6f91b42fb"
@@ -2295,10 +1817,10 @@ uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 version = "1.11.0"
 
 [[deps.BenchmarkTools]]
-deps = ["Compat", "JSON", "Logging", "Printf", "Profile", "Statistics", "UUIDs"]
-git-tree-sha1 = "e38fbc49a620f5d0b660d7f543db1009fe0f8336"
+deps = ["JSON", "Logging", "Printf", "Profile", "Statistics", "UUIDs"]
+git-tree-sha1 = "f1dff6729bc61f4d49e140da1af55dcd1ac97b2f"
 uuid = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-version = "1.6.0"
+version = "1.5.0"
 
 [[deps.BitFlags]]
 git-tree-sha1 = "0691e34b3bb8be9307330f88d1a3c3f25466c24d"
@@ -2306,10 +1828,10 @@ uuid = "d1d4a3ce-64b1-5f1a-9ba4-7e7e69966f35"
 version = "0.1.9"
 
 [[deps.Bzip2_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "1b96ea4a01afe0ea4090c5c8039690672dd13f2e"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "8873e196c2eb87962a2048b3b8e08946535864a1"
 uuid = "6e34b625-4abd-537c-b88f-471c36dfa7a0"
-version = "1.0.9+0"
+version = "1.0.8+4"
 
 [[deps.CEnum]]
 git-tree-sha1 = "389ad5c84de1ae7cf0e28e381131c98ea87d54fc"
@@ -2318,9 +1840,9 @@ version = "0.5.0"
 
 [[deps.CRlibm]]
 deps = ["CRlibm_jll"]
-git-tree-sha1 = "66188d9d103b92b6cd705214242e27f5737a1e5e"
+git-tree-sha1 = "32abd86e3c2025db5172aa182b982debed519834"
 uuid = "96374032-68de-5a5b-8d9e-752f78720389"
-version = "1.0.2"
+version = "1.0.1"
 
 [[deps.CRlibm_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -2330,15 +1852,15 @@ version = "1.0.1+0"
 
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "2ac646d71d0d24b44f3f8c84da8c9f4d70fb67df"
+git-tree-sha1 = "009060c9a6168704143100f36ab08f06c2af4642"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
-version = "1.18.4+0"
+version = "1.18.2+1"
 
 [[deps.ChainRules]]
 deps = ["Adapt", "ChainRulesCore", "Compat", "Distributed", "GPUArraysCore", "IrrationalConstants", "LinearAlgebra", "Random", "RealDot", "SparseArrays", "SparseInverseSubset", "Statistics", "StructArrays", "SuiteSparse"]
-git-tree-sha1 = "a975ae558af61a2a48720a6271661bf2621e0f4e"
+git-tree-sha1 = "4312d7869590fab4a4f789e97bd82f0a04eaaa05"
 uuid = "082447d4-558c-5d27-93f4-14fc19e9eca2"
-version = "1.72.3"
+version = "1.72.2"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra"]
@@ -2358,15 +1880,15 @@ version = "0.8.5"
 
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
-git-tree-sha1 = "962834c22b66e32aa10f7611c08c8ca4e20749a9"
+git-tree-sha1 = "bce6804e5e6044c6daab27bb533d1295e4a2e759"
 uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
-version = "0.7.8"
+version = "0.7.6"
 
 [[deps.ColorSchemes]]
 deps = ["ColorTypes", "ColorVectorSpace", "Colors", "FixedPointNumbers", "PrecompileTools", "Random"]
-git-tree-sha1 = "403f2d8e209681fcbd9468a8514efff3ea08452e"
+git-tree-sha1 = "c785dfb1b3bfddd1da557e861b919819b82bbe5b"
 uuid = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
-version = "3.29.0"
+version = "3.27.1"
 
 [[deps.ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
@@ -2391,10 +1913,10 @@ uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.13.0"
 
 [[deps.CommonMark]]
-deps = ["PrecompileTools"]
-git-tree-sha1 = "351d6f4eaf273b753001b2de4dffb8279b100769"
+deps = ["Crayons", "PrecompileTools"]
+git-tree-sha1 = "3faae67b8899797592335832fccf4b3c80bb04fa"
 uuid = "a80b9123-70ca-4bc0-993e-6e3bcb318db6"
-version = "0.9.1"
+version = "0.8.15"
 
 [[deps.CommonSubexpressions]]
 deps = ["MacroTools"]
@@ -2419,9 +1941,9 @@ version = "1.1.1+0"
 
 [[deps.ConcurrentUtilities]]
 deps = ["Serialization", "Sockets"]
-git-tree-sha1 = "d9d26935a0bcffc87d2613ce14c527c99fc543fd"
+git-tree-sha1 = "f36e5e8fdffcb5646ea5da81495a5a7566005127"
 uuid = "f0e56b4a-5159-44fe-b623-3e5288b988bb"
-version = "2.5.0"
+version = "2.4.3"
 
 [[deps.Configurations]]
 deps = ["ExproniconLite", "OrderedCollections", "TOML"]
@@ -2449,6 +1971,11 @@ git-tree-sha1 = "439e35b0b36e2e5881738abc8857bd92ad6ff9a8"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
 version = "0.6.3"
 
+[[deps.Crayons]]
+git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
+uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
+version = "4.1.1"
+
 [[deps.DataAPI]]
 git-tree-sha1 = "abe83f3a2f1b857aac70ef8b269080af17764bbe"
 uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
@@ -2456,9 +1983,9 @@ version = "1.16.0"
 
 [[deps.DataStructures]]
 deps = ["Compat", "InteractiveUtils", "OrderedCollections"]
-git-tree-sha1 = "4e1fe97fdaed23e9dc21d4d664bea76b65fc50a0"
+git-tree-sha1 = "1d0a14036acb104d9e89698bd408f63ab58cdc82"
 uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.18.22"
+version = "0.18.20"
 
 [[deps.DataValueInterfaces]]
 git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
@@ -2472,9 +1999,9 @@ version = "1.11.0"
 
 [[deps.Dbus_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "473e9afc9cf30814eb67ffa5f2db7df82c3ad9fd"
+git-tree-sha1 = "fc173b380865f70627d7dd1190dc2fce6cc105af"
 uuid = "ee1fde0b-3d02-5ea6-8484-8dfef6360eab"
-version = "1.16.2+0"
+version = "1.14.10+0"
 
 [[deps.DelimitedFiles]]
 deps = ["Mmap"]
@@ -2494,67 +2021,6 @@ git-tree-sha1 = "23163d55f885173722d1e4cf0f6110cdbaf7e272"
 uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
 version = "1.15.1"
 
-[[deps.DifferentiationInterface]]
-deps = ["ADTypes", "LinearAlgebra"]
-git-tree-sha1 = "aa87a743e3778d35a950b76fbd2ae64f810a2bb3"
-uuid = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
-version = "0.6.52"
-
-    [deps.DifferentiationInterface.extensions]
-    DifferentiationInterfaceChainRulesCoreExt = "ChainRulesCore"
-    DifferentiationInterfaceDiffractorExt = "Diffractor"
-    DifferentiationInterfaceEnzymeExt = ["EnzymeCore", "Enzyme"]
-    DifferentiationInterfaceFastDifferentiationExt = "FastDifferentiation"
-    DifferentiationInterfaceFiniteDiffExt = "FiniteDiff"
-    DifferentiationInterfaceFiniteDifferencesExt = "FiniteDifferences"
-    DifferentiationInterfaceForwardDiffExt = ["ForwardDiff", "DiffResults"]
-    DifferentiationInterfaceGPUArraysCoreExt = "GPUArraysCore"
-    DifferentiationInterfaceGTPSAExt = "GTPSA"
-    DifferentiationInterfaceMooncakeExt = "Mooncake"
-    DifferentiationInterfacePolyesterForwardDiffExt = ["PolyesterForwardDiff", "ForwardDiff", "DiffResults"]
-    DifferentiationInterfaceReverseDiffExt = ["ReverseDiff", "DiffResults"]
-    DifferentiationInterfaceSparseArraysExt = "SparseArrays"
-    DifferentiationInterfaceSparseConnectivityTracerExt = "SparseConnectivityTracer"
-    DifferentiationInterfaceSparseMatrixColoringsExt = "SparseMatrixColorings"
-    DifferentiationInterfaceStaticArraysExt = "StaticArrays"
-    DifferentiationInterfaceSymbolicsExt = "Symbolics"
-    DifferentiationInterfaceTrackerExt = "Tracker"
-    DifferentiationInterfaceZygoteExt = ["Zygote", "ForwardDiff"]
-
-    [deps.DifferentiationInterface.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    DiffResults = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
-    Diffractor = "9f5e2b26-1114-432f-b630-d3fe2085c51c"
-    Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
-    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
-    FastDifferentiation = "eb9bf01b-bf85-4b60-bf87-ee5de06c00be"
-    FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
-    FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
-    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-    GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
-    GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
-    Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
-    PolyesterForwardDiff = "98d1487c-24ca-40b6-b7ab-df2af84e126b"
-    ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
-    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
-    SparseConnectivityTracer = "9f842d2f-2579-4b1d-911e-f412cf18a3f5"
-    SparseMatrixColorings = "0a514795-09f3-496d-8182-132a7b665d35"
-    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
-    Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
-    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
-    Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
-
-[[deps.Distances]]
-deps = ["LinearAlgebra", "Statistics", "StatsAPI"]
-git-tree-sha1 = "c7e3a542b999843086e2f29dac96a618c105be1d"
-uuid = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
-version = "0.10.12"
-weakdeps = ["ChainRulesCore", "SparseArrays"]
-
-    [deps.Distances.extensions]
-    DistancesChainRulesCoreExt = "ChainRulesCore"
-    DistancesSparseArraysExt = "SparseArrays"
-
 [[deps.Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
@@ -2562,9 +2028,9 @@ version = "1.11.0"
 
 [[deps.Distributions]]
 deps = ["AliasTables", "FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SpecialFunctions", "Statistics", "StatsAPI", "StatsBase", "StatsFuns"]
-git-tree-sha1 = "6d8b535fd38293bc54b88455465a1386f8ac1c3c"
+git-tree-sha1 = "4b138e4643b577ccf355377c2bc70fa975af25de"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.119"
+version = "0.25.115"
 
     [deps.Distributions.extensions]
     DistributionsChainRulesCoreExt = "ChainRulesCore"
@@ -2577,9 +2043,10 @@ version = "0.25.119"
     Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [[deps.DocStringExtensions]]
-git-tree-sha1 = "e7b7e6f178525d17c720ab9c081e4ef04429f860"
+deps = ["LibGit2"]
+git-tree-sha1 = "2fb1e02f2b635d0845df5d7c167fec4dd739b00d"
 uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
-version = "0.9.4"
+version = "0.9.3"
 
 [[deps.Downloads]]
 deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
@@ -2587,9 +2054,9 @@ uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 version = "1.6.0"
 
 [[deps.EnumX]]
-git-tree-sha1 = "bddad79635af6aec424f53ed8aad5d7555dc6f00"
+git-tree-sha1 = "bdb1942cd4c45e3c678fd11569d5cccd80976237"
 uuid = "4e289a0a-7415-4d19-859d-a7e5c4648b56"
-version = "1.0.5"
+version = "1.0.4"
 
 [[deps.EpollShim_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -2610,9 +2077,9 @@ version = "0.1.11"
 
 [[deps.Expat_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "d55dffd9ae73ff72f1c0482454dcf2ec6c6c4a63"
+git-tree-sha1 = "e51db81749b0777b2147fbe7b783ee79045b8e99"
 uuid = "2e619515-83b5-522b-bb60-26c02a35a201"
-version = "2.6.5+0"
+version = "2.6.4+3"
 
 [[deps.ExprTools]]
 git-tree-sha1 = "27415f162e6028e81c72b82ef756bf321213b6ec"
@@ -2620,14 +2087,14 @@ uuid = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
 version = "0.1.10"
 
 [[deps.ExpressionExplorer]]
-git-tree-sha1 = "4a8c0a9eebf807ac42f0f6de758e60a20be25ffb"
+git-tree-sha1 = "7005f1493c18afb2fa3bdf06e02b16a9fde5d16d"
 uuid = "21656369-7473-754a-2065-74616d696c43"
-version = "1.1.3"
+version = "1.1.0"
 
 [[deps.ExproniconLite]]
-git-tree-sha1 = "c13f0b150373771b0fdc1713c97860f8df12e6c2"
+git-tree-sha1 = "4c9ed87a6b3cd90acf24c556f2119533435ded38"
 uuid = "55351af7-c7e9-48d6-89ff-24e801d99491"
-version = "0.10.14"
+version = "0.10.13"
 
 [[deps.FFMPEG]]
 deps = ["FFMPEG_jll"]
@@ -2665,9 +2132,9 @@ weakdeps = ["PDMats", "SparseArrays", "Statistics"]
 
 [[deps.FiniteDiff]]
 deps = ["ArrayInterface", "LinearAlgebra", "Setfield"]
-git-tree-sha1 = "f089ab1f834470c525562030c8cfde4025d5e915"
+git-tree-sha1 = "84e3a47db33be7248daa6274b287507dd6ff84e8"
 uuid = "6a86dc24-6348-571c-b903-95158fe2bd41"
-version = "2.27.0"
+version = "2.26.2"
 
     [deps.FiniteDiff.extensions]
     FiniteDiffBandedMatricesExt = "BandedMatrices"
@@ -2689,9 +2156,9 @@ version = "0.8.5"
 
 [[deps.Fontconfig_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Expat_jll", "FreeType2_jll", "JLLWrappers", "Libdl", "Libuuid_jll", "Zlib_jll"]
-git-tree-sha1 = "301b5d5d731a0654825f1f2e906990f7141a106b"
+git-tree-sha1 = "21fac3c77d7b5a9fc03b0ec503aa1a6392c34d2b"
 uuid = "a3f928ae-7b40-5064-980b-68af3947d34b"
-version = "2.16.0+0"
+version = "2.15.0+0"
 
 [[deps.Format]]
 git-tree-sha1 = "9c68794ef81b08086aeb32eeaf33531668d5f5fc"
@@ -2710,15 +2177,15 @@ weakdeps = ["StaticArrays"]
 
 [[deps.FreeType2_jll]]
 deps = ["Artifacts", "Bzip2_jll", "JLLWrappers", "Libdl", "Zlib_jll"]
-git-tree-sha1 = "2c5512e11c791d1baed2049c5652441b28fc6a31"
+git-tree-sha1 = "786e968a8d2fb167f2e4880baba62e0e26bd8e4e"
 uuid = "d7e528f0-a631-5988-bf34-fe36492bcfd7"
-version = "2.13.4+0"
+version = "2.13.3+1"
 
 [[deps.FriBidi_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "7a214fdac5ed5f59a22c2d9a885a16da1c74bbc7"
+git-tree-sha1 = "846f7026a9decf3679419122b49f8a1fdb48d2d5"
 uuid = "559328eb-81f9-559d-9380-de523a88c83c"
-version = "1.0.17+0"
+version = "1.0.16+0"
 
 [[deps.FunctionWrappers]]
 git-tree-sha1 = "d62485945ce5ae9c0c48f124a84998d755bae00e"
@@ -2729,6 +2196,12 @@ version = "1.1.3"
 deps = ["Random"]
 uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 version = "1.11.0"
+
+[[deps.FuzzyCompletions]]
+deps = ["REPL"]
+git-tree-sha1 = "be713866335f48cfb1285bff2d0cbb8304c1701c"
+uuid = "fb4132e2-a121-4a70-b8a1-d5b831dcdcc2"
+version = "0.5.5"
 
 [[deps.GLFW_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libglvnd_jll", "Xorg_libXcursor_jll", "Xorg_libXi_jll", "Xorg_libXinerama_jll", "Xorg_libXrandr_jll", "libdecor_jll", "xkbcommon_jll"]
@@ -2754,10 +2227,10 @@ uuid = "781609d7-10c4-51f6-84f2-b8444358ff6d"
 version = "6.3.0+0"
 
 [[deps.GPUArrays]]
-deps = ["Adapt", "GPUArraysCore", "KernelAbstractions", "LLVM", "LinearAlgebra", "Printf", "Random", "Reexport", "ScopedValues", "Serialization", "Statistics"]
-git-tree-sha1 = "eea7b3a1964b4de269bb380462a9da604be7fcdb"
+deps = ["Adapt", "GPUArraysCore", "KernelAbstractions", "LLVM", "LinearAlgebra", "Printf", "Random", "Reexport", "Serialization", "Statistics"]
+git-tree-sha1 = "4ec797b1b2ee964de0db96f10cce05b81f23e108"
 uuid = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
-version = "11.2.2"
+version = "11.1.0"
 
 [[deps.GPUArraysCore]]
 deps = ["Adapt"]
@@ -2767,15 +2240,15 @@ version = "0.2.0"
 
 [[deps.GR]]
 deps = ["Artifacts", "Base64", "DelimitedFiles", "Downloads", "GR_jll", "HTTP", "JSON", "Libdl", "LinearAlgebra", "Preferences", "Printf", "Qt6Wayland_jll", "Random", "Serialization", "Sockets", "TOML", "Tar", "Test", "p7zip_jll"]
-git-tree-sha1 = "7ffa4049937aeba2e5e1242274dc052b0362157a"
+git-tree-sha1 = "424c8f76017e39fdfcdbb5935a8e6742244959e8"
 uuid = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
-version = "0.73.14"
+version = "0.73.10"
 
 [[deps.GR_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Cairo_jll", "FFMPEG_jll", "Fontconfig_jll", "FreeType2_jll", "GLFW_jll", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pixman_jll", "Qt6Base_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "98fc192b4e4b938775ecd276ce88f539bcec358e"
+git-tree-sha1 = "b90934c8cb33920a8dc66736471dc3961b42ec9f"
 uuid = "d2c73de3-f751-5644-a686-071e5b155ba9"
-version = "0.73.14+0"
+version = "0.73.10+0"
 
 [[deps.Gettext_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "XML2_jll"]
@@ -2789,17 +2262,11 @@ git-tree-sha1 = "b0036b392358c80d2d2124746c2bf3d48d457938"
 uuid = "7746bdde-850d-59dc-9ae8-88ece973131d"
 version = "2.82.4+0"
 
-[[deps.GracefulPkg]]
-deps = ["Compat", "Pkg", "TOML"]
-git-tree-sha1 = "ec6d498af5b39005fc458bfcc41a780169abccc9"
-uuid = "828d9ff0-206c-6161-646e-6576656f7244"
-version = "2.1.0"
-
 [[deps.Graphite2_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "8a6dbda1fd736d60cc477d99f2e7a042acfa46e8"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "01979f9b37367603e2848ea225918a3b3861b606"
 uuid = "3b182d85-2403-5c21-9c21-1e1f0cc25472"
-version = "1.3.15+0"
+version = "1.3.14+1"
 
 [[deps.GridInterpolations]]
 deps = ["LinearAlgebra", "Printf", "StaticArrays"]
@@ -2814,9 +2281,9 @@ version = "1.0.2"
 
 [[deps.HTTP]]
 deps = ["Base64", "CodecZlib", "ConcurrentUtilities", "Dates", "ExceptionUnwrapping", "Logging", "LoggingExtras", "MbedTLS", "NetworkOptions", "OpenSSL", "PrecompileTools", "Random", "SimpleBufferStream", "Sockets", "URIs", "UUIDs"]
-git-tree-sha1 = "f93655dc73d7a0b4a368e3c0bce296ae035ad76e"
+git-tree-sha1 = "c67b33b085f6e2faf8bf79a61962e7339a81129c"
 uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-version = "1.10.16"
+version = "1.10.15"
 
 [[deps.HarfBuzz_jll]]
 deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "Graphite2_jll", "JLLWrappers", "Libdl", "Libffi_jll"]
@@ -2824,16 +2291,11 @@ git-tree-sha1 = "55c53be97790242c29031e5cd45e8ac296dadda3"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "8.5.0+0"
 
-[[deps.HashArrayMappedTries]]
-git-tree-sha1 = "2eaa69a7cab70a52b9687c8bf950a5a93ec895ae"
-uuid = "076d061b-32b6-4027-95e0-9a2c6f6d7e74"
-version = "0.2.0"
-
 [[deps.HypergeometricFunctions]]
 deps = ["LinearAlgebra", "OpenLibm_jll", "SpecialFunctions"]
-git-tree-sha1 = "68c173f4f449de5b438ee67ed0c9c748dc31a2ec"
+git-tree-sha1 = "b1c2585431c382e3fe5805874bda6aea90a95de9"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
-version = "0.3.28"
+version = "0.3.25"
 
 [[deps.Hyperscript]]
 deps = ["Test"]
@@ -2864,16 +2326,6 @@ deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 version = "1.11.0"
 
-[[deps.Interpolations]]
-deps = ["Adapt", "AxisAlgorithms", "ChainRulesCore", "LinearAlgebra", "OffsetArrays", "Random", "Ratios", "Requires", "SharedArrays", "SparseArrays", "StaticArrays", "WoodburyMatrices"]
-git-tree-sha1 = "88a101217d7cb38a7b481ccd50d21876e1d1b0e0"
-uuid = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
-version = "0.15.1"
-weakdeps = ["Unitful"]
-
-    [deps.Interpolations.extensions]
-    InterpolationsUnitfulExt = "Unitful"
-
 [[deps.IntervalArithmetic]]
 deps = ["CRlibm", "EnumX", "FastRounding", "LinearAlgebra", "Markdown", "Random", "RecipesBase", "RoundingEmulator", "SetRounding", "StaticArrays"]
 git-tree-sha1 = "f59e639916283c1d2e106d2b00910b50f4dab76c"
@@ -2881,9 +2333,9 @@ uuid = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
 version = "0.21.2"
 
 [[deps.IrrationalConstants]]
-git-tree-sha1 = "e2222959fbc6c19554dc15174c81bf7bf3aa691c"
+git-tree-sha1 = "630b497eafcc20001bba38a4651b327dcfc491d2"
 uuid = "92d709cd-6900-40b7-9082-c6be49f344b6"
-version = "0.2.4"
+version = "0.2.2"
 
 [[deps.IteratorInterfaceExtensions]]
 git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
@@ -2891,10 +2343,10 @@ uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
 
 [[deps.JLFzf]]
-deps = ["REPL", "Random", "fzf_jll"]
-git-tree-sha1 = "82f7acdc599b65e0f8ccd270ffa1467c21cb647b"
+deps = ["Pipe", "REPL", "Random", "fzf_jll"]
+git-tree-sha1 = "71b48d857e86bf7a1838c4736545699974ce79a2"
 uuid = "1019f520-868f-41f5-a6de-eb00f4b6a39c"
-version = "0.1.11"
+version = "0.1.9"
 
 [[deps.JLLWrappers]]
 deps = ["Artifacts", "Preferences"]
@@ -2908,18 +2360,6 @@ git-tree-sha1 = "31e996f0a15c7b280ba9f76636b3ff9e2ae58c9a"
 uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 version = "0.21.4"
 
-[[deps.JSON3]]
-deps = ["Dates", "Mmap", "Parsers", "PrecompileTools", "StructTypes", "UUIDs"]
-git-tree-sha1 = "196b41e5a854b387d99e5ede2de3fcb4d0422aae"
-uuid = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
-version = "1.14.2"
-
-    [deps.JSON3.extensions]
-    JSON3ArrowExt = ["ArrowTypes"]
-
-    [deps.JSON3.weakdeps]
-    ArrowTypes = "31f734f8-188a-4ce0-8406-c8a06bd891cd"
-
 [[deps.JpegTurbo_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "eac1206917768cb54957c65a615460d87b455fc1"
@@ -2928,9 +2368,9 @@ version = "3.1.1+0"
 
 [[deps.JuMP]]
 deps = ["LinearAlgebra", "MacroTools", "MathOptInterface", "MutableArithmetics", "OrderedCollections", "PrecompileTools", "Printf", "SparseArrays"]
-git-tree-sha1 = "c9ace86360c1dc0635de5f9e2ce5143b86c53311"
+git-tree-sha1 = "866dd0bf0474f0d5527c2765c71889762ba90a27"
 uuid = "4076af6c-e467-56ae-b986-b466b2749572"
-version = "1.25.0"
+version = "1.23.5"
 
     [deps.JuMP.extensions]
     JuMPDimensionalDataExt = "DimensionalData"
@@ -2940,9 +2380,9 @@ version = "1.25.0"
 
 [[deps.KernelAbstractions]]
 deps = ["Adapt", "Atomix", "InteractiveUtils", "MacroTools", "PrecompileTools", "Requires", "StaticArrays", "UUIDs"]
-git-tree-sha1 = "80d268b2f4e396edc5ea004d1e0f569231c71e9e"
+git-tree-sha1 = "b9a838cd3028785ac23822cded5126b3da394d1a"
 uuid = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
-version = "0.9.34"
+version = "0.9.31"
 
     [deps.KernelAbstractions.extensions]
     EnzymeExt = "EnzymeCore"
@@ -2968,9 +2408,9 @@ version = "4.0.1+0"
 
 [[deps.LLVM]]
 deps = ["CEnum", "LLVMExtra_jll", "Libdl", "Preferences", "Printf", "Unicode"]
-git-tree-sha1 = "f0e861832695dbb70e710606a7d18b7f81acec92"
+git-tree-sha1 = "d422dfd9707bec6617335dc2ea3c5172a87d5908"
 uuid = "929cbde3-209d-540e-8aea-75f648917ca0"
-version = "9.3.1"
+version = "9.1.3"
 
     [deps.LLVM.extensions]
     BFloat16sExt = "BFloat16s"
@@ -2980,30 +2420,21 @@ version = "9.3.1"
 
 [[deps.LLVMExtra_jll]]
 deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
-git-tree-sha1 = "4b5ad6a4ffa91a00050a964492bc4f86bb48cea0"
+git-tree-sha1 = "05a8bd5a42309a9ec82f700876903abce1017dd3"
 uuid = "dad2f222-ce93-54a1-a47d-0025e8a3acab"
-version = "0.0.35+0"
+version = "0.0.34+0"
 
 [[deps.LLVMOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "eb62a3deb62fc6d8822c0c4bef73e4412419c5d8"
+git-tree-sha1 = "78211fb6cbc872f77cad3fc0b6cf647d923f4929"
 uuid = "1d63c593-3942-5779-bab2-d838dc0a180e"
-version = "18.1.8+0"
-
-[[deps.LRUCache]]
-git-tree-sha1 = "5519b95a490ff5fe629c4a7aa3b3dfc9160498b3"
-uuid = "8ac3fa9e-de4c-5943-b1dc-09c6b5f20637"
-version = "1.6.2"
-weakdeps = ["Serialization"]
-
-    [deps.LRUCache.extensions]
-    SerializationExt = ["Serialization"]
+version = "18.1.7+0"
 
 [[deps.LZO_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "1c602b1127f4751facb671441ca72715cc95938a"
+git-tree-sha1 = "854a9c268c43b77b0a27f22d7fab8d33cdb3a731"
 uuid = "dd4b983a-f0e5-5f8d-a1b7-129d4a5fb1ac"
-version = "2.10.3+0"
+version = "2.10.2+3"
 
 [[deps.LaTeXStrings]]
 git-tree-sha1 = "dda21b8cbd6a6c40d9d02a73230f9d70fed6918c"
@@ -3012,9 +2443,9 @@ version = "1.4.0"
 
 [[deps.Latexify]]
 deps = ["Format", "InteractiveUtils", "LaTeXStrings", "MacroTools", "Markdown", "OrderedCollections", "Requires"]
-git-tree-sha1 = "cd10d2cc78d34c0e2a3a36420ab607b611debfbb"
+git-tree-sha1 = "ce5f5621cac23a86011836badfedf664a612cee4"
 uuid = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
-version = "0.16.7"
+version = "0.16.5"
 
     [deps.Latexify.extensions]
     DataFramesExt = "DataFrames"
@@ -3038,9 +2469,9 @@ version = "1.11.0"
 
 [[deps.LazySets]]
 deps = ["Distributed", "GLPK", "IntervalArithmetic", "JuMP", "LinearAlgebra", "Random", "ReachabilityBase", "RecipesBase", "Reexport", "Requires", "SharedArrays", "SparseArrays", "StaticArraysCore"]
-git-tree-sha1 = "acac6ec3e8945b48d1923bbe18f0ccb254afa91d"
+git-tree-sha1 = "ae9b6a027c694b9e0bab91fc25d0b2808f1bf755"
 uuid = "b4f0291d-fe17-52bc-9479-3d1a343d9043"
-version = "3.1.0"
+version = "3.0.0"
 
 [[deps.LibCURL]]
 deps = ["LibCURL_jll", "MozillaCACerts_jll"]
@@ -3077,23 +2508,35 @@ git-tree-sha1 = "27ecae93dd25ee0909666e6835051dd684cc035e"
 uuid = "e9f186c6-92d2-5b65-8a66-fee21dc1b490"
 version = "3.2.2+2"
 
+[[deps.Libgcrypt_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Libgpg_error_jll"]
+git-tree-sha1 = "8be878062e0ffa2c3f67bb58a595375eda5de80b"
+uuid = "d4300ac3-e22c-5743-9152-c294e39db1e4"
+version = "1.11.0+0"
+
 [[deps.Libglvnd_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll", "Xorg_libXext_jll"]
-git-tree-sha1 = "d36c21b9e7c172a44a10484125024495e2625ac0"
+git-tree-sha1 = "ff3b4b9d35de638936a525ecd36e86a8bb919d11"
 uuid = "7e76a0d4-f3c7-5321-8279-8d96eeed0f29"
-version = "1.7.1+1"
+version = "1.7.0+0"
+
+[[deps.Libgpg_error_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "df37206100d39f79b3376afb6b9cee4970041c61"
+uuid = "7add5ba3-2f88-524e-9cd5-f83b8a55f7b8"
+version = "1.51.1+0"
 
 [[deps.Libiconv_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "be484f5c92fad0bd8acfef35fe017900b0b73809"
+git-tree-sha1 = "61dfdba58e585066d8bce214c5a51eaa0539f269"
 uuid = "94ce4f54-9a6c-5748-9c1c-f9c7231a4531"
-version = "1.18.0+0"
+version = "1.17.0+1"
 
 [[deps.Libmount_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a31572773ac1b745e0343fe5e2c8ddda7a37e997"
+git-tree-sha1 = "84eef7acd508ee5b3e956a2ae51b05024181dee0"
 uuid = "4b2f31a3-9ecc-558c-b454-b3730dcb73e9"
-version = "2.41.0+0"
+version = "2.40.2+2"
 
 [[deps.Libtiff_jll]]
 deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "LERC_jll", "Libdl", "XZ_jll", "Zlib_jll", "Zstd_jll"]
@@ -3103,9 +2546,9 @@ version = "4.7.1+0"
 
 [[deps.Libuuid_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "321ccef73a96ba828cd51f2ab5b9f917fa73945a"
+git-tree-sha1 = "edbf5309f9ddf1cab25afc344b1e8150b7c832f9"
 uuid = "38a345b3-de98-5d2b-a5d3-14cd9215e700"
-version = "2.41.0+0"
+version = "2.40.2+2"
 
 [[deps.LineSearches]]
 deps = ["LinearAlgebra", "NLSolversBase", "NaNMath", "Parameters", "Printf"]
@@ -3145,14 +2588,15 @@ uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.1.0"
 
 [[deps.MIMEs]]
-git-tree-sha1 = "c64d943587f7187e751162b3b84445bbbd79f691"
+git-tree-sha1 = "65f28ad4b594aebe22157d6fac869786a255b7eb"
 uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
-version = "1.1.0"
+version = "0.1.4"
 
 [[deps.MacroTools]]
-git-tree-sha1 = "1e0228a030642014fe5cfe68c2c0a818f9e3f522"
+deps = ["Markdown", "Random"]
+git-tree-sha1 = "2fa9ee3e63fd3a4f7a9a4f4744a52f4856de82df"
 uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
-version = "0.5.16"
+version = "0.5.13"
 
 [[deps.Malt]]
 deps = ["Distributed", "Logging", "RelocatableFolders", "Serialization", "Sockets"]
@@ -3167,15 +2611,15 @@ version = "1.11.0"
 
 [[deps.MarkdownLiteral]]
 deps = ["CommonMark", "HypertextLiteral"]
-git-tree-sha1 = "f7d73634acd573bf3489df1ee0d270a5d6d3a7a3"
+git-tree-sha1 = "0d3fa2dd374934b62ee16a4721fe68c418b92899"
 uuid = "736d6165-7244-6769-4267-6b50796e6954"
-version = "0.1.2"
+version = "0.1.1"
 
 [[deps.MathOptInterface]]
-deps = ["BenchmarkTools", "CodecBzip2", "CodecZlib", "DataStructures", "ForwardDiff", "JSON3", "LinearAlgebra", "MutableArithmetics", "NaNMath", "OrderedCollections", "PrecompileTools", "Printf", "SparseArrays", "SpecialFunctions", "Test"]
-git-tree-sha1 = "22b3e0bd1442bf9f5d3cb76e7d34ca87b88d0f36"
+deps = ["BenchmarkTools", "CodecBzip2", "CodecZlib", "DataStructures", "ForwardDiff", "JSON", "LinearAlgebra", "MutableArithmetics", "NaNMath", "OrderedCollections", "PrecompileTools", "Printf", "SparseArrays", "SpecialFunctions", "Test", "Unicode"]
+git-tree-sha1 = "e065ca5234f53fd6f920efaee4940627ad991fb4"
 uuid = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
-version = "1.40.0"
+version = "1.34.0"
 
 [[deps.MbedTLS]]
 deps = ["Dates", "MbedTLS_jll", "MozillaCACerts_jll", "NetworkOptions", "Random", "Sockets"]
@@ -3215,34 +2659,25 @@ version = "1.2.1"
 
 [[deps.MutableArithmetics]]
 deps = ["LinearAlgebra", "SparseArrays", "Test"]
-git-tree-sha1 = "491bdcdc943fcbc4c005900d7463c9f216aabf4c"
+git-tree-sha1 = "a2710df6b0931f987530f59427441b21245d8f5e"
 uuid = "d8a4904e-b15c-11e9-3269-09a3773c0cb0"
-version = "1.6.4"
+version = "1.6.0"
 
 [[deps.NLSolversBase]]
-deps = ["ADTypes", "DifferentiationInterface", "Distributed", "FiniteDiff", "ForwardDiff"]
-git-tree-sha1 = "b14c7be6046e7d48e9063a0053f95ee0fc954176"
+deps = ["DiffResults", "Distributed", "FiniteDiff", "ForwardDiff"]
+git-tree-sha1 = "a0b464d183da839699f4c79e7606d9d186ec172c"
 uuid = "d41bc354-129a-5804-8e4c-c37616107c6c"
-version = "7.9.1"
+version = "7.8.3"
 
 [[deps.NaNMath]]
 deps = ["OpenLibm_jll"]
-git-tree-sha1 = "9b8215b1ee9e78a293f99797cd31375471b2bcae"
+git-tree-sha1 = "0877504529a3e5c3343c6f8b4c0381e57e4387e4"
 uuid = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
-version = "1.1.3"
+version = "1.0.2"
 
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 version = "1.2.0"
-
-[[deps.OffsetArrays]]
-git-tree-sha1 = "117432e406b5c023f665fa73dc26e79ec3630151"
-uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
-version = "1.17.0"
-weakdeps = ["Adapt"]
-
-    [deps.OffsetArrays.extensions]
-    OffsetArraysAdaptExt = "Adapt"
 
 [[deps.Ogg_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -3258,7 +2693,7 @@ version = "0.3.27+1"
 [[deps.OpenLibm_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
-version = "0.8.5+0"
+version = "0.8.1+2"
 
 [[deps.OpenSSL]]
 deps = ["BitFlags", "Dates", "MozillaCACerts_jll", "OpenSSL_jll", "Sockets"]
@@ -3268,9 +2703,9 @@ version = "1.4.3"
 
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "9216a80ff3682833ac4b733caa8c00390620ba5d"
+git-tree-sha1 = "7493f61f55a6cce7325f197443aa80d32554ba10"
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "3.5.0+0"
+version = "3.0.15+3"
 
 [[deps.OpenSpecFun_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
@@ -3295,9 +2730,9 @@ uuid = "91d4177d-7536-5919-b921-800302f37372"
 version = "1.3.3+0"
 
 [[deps.OrderedCollections]]
-git-tree-sha1 = "cc4054e898b852042d7b503313f7ad03de99c3dd"
+git-tree-sha1 = "12f1439c4f986bb868acda6ea33ebc78e19b95ad"
 uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
-version = "1.8.0"
+version = "1.7.0"
 
 [[deps.PCRE2_jll]]
 deps = ["Artifacts", "Libdl"]
@@ -3306,15 +2741,15 @@ version = "10.42.0+1"
 
 [[deps.PDMats]]
 deps = ["LinearAlgebra", "SparseArrays", "SuiteSparse"]
-git-tree-sha1 = "0e1340b5d98971513bddaa6bbed470670cebbbfe"
+git-tree-sha1 = "949347156c25054de2db3b166c52ac4728cbad65"
 uuid = "90014a1f-27ba-587c-ab20-58faa44d9150"
-version = "0.11.34"
+version = "0.11.31"
 
 [[deps.Pango_jll]]
 deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jll", "Glib_jll", "HarfBuzz_jll", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "3b31172c032a1def20c98dae3f2cdc9d10e3b561"
+git-tree-sha1 = "ed6834e95bd326c52d5675b4181386dfbe885afb"
 uuid = "36c8627f-9965-5494-a995-c6b170f724f3"
-version = "1.56.1+0"
+version = "1.55.5+0"
 
 [[deps.Parameters]]
 deps = ["OrderedCollections", "UnPack"]
@@ -3324,15 +2759,20 @@ version = "0.12.3"
 
 [[deps.Parsers]]
 deps = ["Dates", "PrecompileTools", "UUIDs"]
-git-tree-sha1 = "7d2f8f21da5db6a806faf7b9b292296da42b2810"
+git-tree-sha1 = "8489905bcdbcfac64d1daa51ca07c0d8f0283821"
 uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "2.8.3"
+version = "2.8.1"
+
+[[deps.Pipe]]
+git-tree-sha1 = "6842804e7867b115ca9de748a0cf6b364523c16d"
+uuid = "b98c9c47-44ae-5843-9183-064241ee97a0"
+version = "1.3.0"
 
 [[deps.Pixman_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "Libdl"]
-git-tree-sha1 = "db76b1ecd5e9715f3d043cec13b2ec93ce015d53"
+git-tree-sha1 = "35621f10a7531bc8fa58f74610b1bfb70a3cfc6b"
 uuid = "30392449-352a-5448-841d-b1acce4e97dc"
-version = "0.44.2+0"
+version = "0.43.4+0"
 
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "Random", "SHA", "TOML", "Tar", "UUIDs", "p7zip_jll"]
@@ -3357,9 +2797,9 @@ version = "1.4.3"
 
 [[deps.Plots]]
 deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers", "GR", "JLFzf", "JSON", "LaTeXStrings", "Latexify", "LinearAlgebra", "Measures", "NaNMath", "Pkg", "PlotThemes", "PlotUtils", "PrecompileTools", "Printf", "REPL", "Random", "RecipesBase", "RecipesPipeline", "Reexport", "RelocatableFolders", "Requires", "Scratch", "Showoff", "SparseArrays", "Statistics", "StatsBase", "TOML", "UUIDs", "UnicodeFun", "UnitfulLatexify", "Unzip"]
-git-tree-sha1 = "809ba625a00c605f8d00cd2a9ae19ce34fc24d68"
+git-tree-sha1 = "dae01f8c2e069a683d3a6e17bbae5070ab94786f"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-version = "1.40.13"
+version = "1.40.9"
 
     [deps.Plots.extensions]
     FileIOExt = "FileIO"
@@ -3376,22 +2816,22 @@ version = "1.40.13"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [[deps.Pluto]]
-deps = ["Base64", "Configurations", "Dates", "Downloads", "ExpressionExplorer", "FileWatching", "GracefulPkg", "HTTP", "HypertextLiteral", "InteractiveUtils", "LRUCache", "Logging", "LoggingExtras", "MIMEs", "Malt", "Markdown", "MsgPack", "Pkg", "PlutoDependencyExplorer", "PrecompileSignatures", "PrecompileTools", "REPL", "RegistryInstances", "RelocatableFolders", "Scratch", "Sockets", "TOML", "Tables", "URIs", "UUIDs"]
-git-tree-sha1 = "a105834e8c86157bba9def667dde7ed79cb405b4"
+deps = ["Base64", "Configurations", "Dates", "Downloads", "ExpressionExplorer", "FileWatching", "FuzzyCompletions", "HTTP", "HypertextLiteral", "InteractiveUtils", "Logging", "LoggingExtras", "MIMEs", "Malt", "Markdown", "MsgPack", "Pkg", "PlutoDependencyExplorer", "PrecompileSignatures", "PrecompileTools", "REPL", "RegistryInstances", "RelocatableFolders", "Scratch", "Sockets", "TOML", "Tables", "URIs", "UUIDs"]
+git-tree-sha1 = "b5509a2e4d4c189da505b780e3f447d1e38a0350"
 uuid = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
-version = "0.20.8"
+version = "0.20.4"
 
 [[deps.PlutoDependencyExplorer]]
 deps = ["ExpressionExplorer", "InteractiveUtils", "Markdown"]
-git-tree-sha1 = "9071bfe6d1c3c51f62918513e8dfa0705fbdef7e"
+git-tree-sha1 = "e0864c15334d2c4bac8137ce3359f1174565e719"
 uuid = "72656b73-756c-7461-726b-72656b6b696b"
-version = "1.2.1"
+version = "1.2.0"
 
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
-git-tree-sha1 = "d3de2694b52a01ce61a036f18ea9c0f61c4a9230"
+git-tree-sha1 = "eba4810d5e6a01f612b948c9fa94f905b49087b0"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.62"
+version = "0.7.60"
 
 [[deps.PositiveFactorizations]]
 deps = ["LinearAlgebra"]
@@ -3432,9 +2872,9 @@ uuid = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 version = "0.1.4"
 
 [[deps.PtrArrays]]
-git-tree-sha1 = "1d36ef11a9aaf1e8b74dacc6a731dd1de8fd493d"
+git-tree-sha1 = "77a42d78b6a92df47ab37e177b2deac405e1c88f"
 uuid = "43287f4e-b6f4-7ad1-bb20-aadabca52c3d"
-version = "1.3.0"
+version = "1.2.1"
 
 [[deps.Qt6Base_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Fontconfig_jll", "Glib_jll", "JLLWrappers", "Libdl", "Libglvnd_jll", "OpenSSL_jll", "Vulkan_Loader_jll", "Xorg_libSM_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Xorg_libxcb_jll", "Xorg_xcb_util_cursor_jll", "Xorg_xcb_util_image_jll", "Xorg_xcb_util_keysyms_jll", "Xorg_xcb_util_renderutil_jll", "Xorg_xcb_util_wm_jll", "Zlib_jll", "libinput_jll", "xkbcommon_jll"]
@@ -3462,9 +2902,9 @@ version = "6.7.1+1"
 
 [[deps.QuadGK]]
 deps = ["DataStructures", "LinearAlgebra"]
-git-tree-sha1 = "9da16da70037ba9d701192e27befedefb91ec284"
+git-tree-sha1 = "cda3b045cf9ef07a08ad46731f5a3165e56cf3da"
 uuid = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
-version = "2.11.2"
+version = "2.11.1"
 
     [deps.QuadGK.extensions]
     QuadGKEnzymeExt = "Enzyme"
@@ -3482,21 +2922,11 @@ deps = ["SHA"]
 uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 version = "1.11.0"
 
-[[deps.Ratios]]
-deps = ["Requires"]
-git-tree-sha1 = "1342a47bf3260ee108163042310d26f2be5ec90b"
-uuid = "c84ed2f1-dad5-54f0-aa8e-dbefe2724439"
-version = "0.4.5"
-weakdeps = ["FixedPointNumbers"]
-
-    [deps.Ratios.extensions]
-    RatiosFixedPointNumbersExt = "FixedPointNumbers"
-
 [[deps.ReachabilityBase]]
 deps = ["ExprTools", "InteractiveUtils", "LinearAlgebra", "Random", "Requires", "SparseArrays"]
-git-tree-sha1 = "c2bc05dbc627428094d246c3237f2e389dd87ef0"
+git-tree-sha1 = "d28da1989cc21fcf57611f928061de5e8f27dc5c"
 uuid = "379f33d0-9447-4353-bd03-d664070e549f"
-version = "0.3.4"
+version = "0.3.3"
 
 [[deps.RealDot]]
 deps = ["LinearAlgebra"]
@@ -3535,9 +2965,9 @@ version = "1.0.1"
 
 [[deps.Requires]]
 deps = ["UUIDs"]
-git-tree-sha1 = "62389eeff14780bfe55195b7204c0d8738436d64"
+git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
-version = "1.3.1"
+version = "1.3.0"
 
 [[deps.ReverseDiff]]
 deps = ["ChainRulesCore", "DiffResults", "DiffRules", "ForwardDiff", "FunctionWrappers", "LinearAlgebra", "LogExpFunctions", "MacroTools", "NaNMath", "Random", "SpecialFunctions", "StaticArrays", "Statistics"]
@@ -3566,12 +2996,6 @@ version = "0.2.1"
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 version = "0.7.0"
 
-[[deps.ScopedValues]]
-deps = ["HashArrayMappedTries", "Logging"]
-git-tree-sha1 = "1147f140b4c8ddab224c94efa9569fc23d63ab44"
-uuid = "7e506255-f358-4e82-b7e4-beb19740aa63"
-version = "1.3.0"
-
 [[deps.Scratch]]
 deps = ["Dates"]
 git-tree-sha1 = "3bac05bc7e74a75fd9cba4295cde4045d9fe2386"
@@ -3589,9 +3013,9 @@ version = "0.2.1"
 
 [[deps.Setfield]]
 deps = ["ConstructionBase", "Future", "MacroTools", "StaticArraysCore"]
-git-tree-sha1 = "c5391c6ace3bc430ca630251d02ea9687169ca68"
+git-tree-sha1 = "e2cc6d8c88613c05e1defb55170bf5ff211fbeac"
 uuid = "efcf1570-3423-57d1-acb7-fd33fddbac46"
-version = "1.1.2"
+version = "1.1.1"
 
 [[deps.SharedArrays]]
 deps = ["Distributed", "Mmap", "Random", "Serialization"]
@@ -3638,9 +3062,9 @@ version = "0.1.2"
 
 [[deps.SpecialFunctions]]
 deps = ["IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
-git-tree-sha1 = "41852b8679f78c8d8961eeadc8f62cef861a52e3"
+git-tree-sha1 = "64cca0c26b4f31ba18f13f6c12af7c85f478cfde"
 uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
-version = "2.5.1"
+version = "2.5.0"
 weakdeps = ["ChainRulesCore"]
 
     [deps.SpecialFunctions.extensions]
@@ -3648,21 +3072,21 @@ weakdeps = ["ChainRulesCore"]
 
 [[deps.StableRNGs]]
 deps = ["Random"]
-git-tree-sha1 = "95af145932c2ed859b63329952ce8d633719f091"
+git-tree-sha1 = "83e6cce8324d49dfaf9ef059227f91ed4441a8e5"
 uuid = "860ef19b-820b-49d6-a774-d7a799459cd3"
-version = "1.0.3"
+version = "1.0.2"
 
 [[deps.StanfordAA228V]]
-deps = ["AbstractPlutoDingetjes", "BSON", "Base64", "Distances", "Distributions", "Downloads", "ForwardDiff", "GridInterpolations", "Interpolations", "LazySets", "LinearAlgebra", "Markdown", "Optim", "Parameters", "Pkg", "Plots", "Pluto", "PlutoUI", "ProgressLogging", "Random", "SignalTemporalLogic", "Statistics", "TOML"]
-git-tree-sha1 = "86ea9251637f86e14eaf1be169462aa710d4817f"
+deps = ["AbstractPlutoDingetjes", "BSON", "Base64", "Distributions", "Downloads", "ForwardDiff", "GridInterpolations", "LazySets", "LinearAlgebra", "Markdown", "Optim", "Parameters", "Pkg", "Plots", "Pluto", "PlutoUI", "ProgressLogging", "Random", "SignalTemporalLogic", "Statistics", "TOML"]
+git-tree-sha1 = "5376632ae8604432fd7c8ce7308edf70950c1da8"
 uuid = "6f6e590e-f8c2-4a21-9268-94576b9fb3b1"
-version = "0.1.27"
+version = "0.1.22"
 
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "PrecompileTools", "Random", "StaticArraysCore"]
-git-tree-sha1 = "0feb6b9031bd5c51f9072393eb5ab3efd31bf9e4"
+git-tree-sha1 = "47091a0340a675c738b1304b58161f3b0839d454"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.9.13"
+version = "1.9.10"
 weakdeps = ["ChainRulesCore", "Statistics"]
 
     [deps.StaticArrays.extensions]
@@ -3692,15 +3116,15 @@ version = "1.7.0"
 
 [[deps.StatsBase]]
 deps = ["AliasTables", "DataAPI", "DataStructures", "LinearAlgebra", "LogExpFunctions", "Missings", "Printf", "Random", "SortingAlgorithms", "SparseArrays", "Statistics", "StatsAPI"]
-git-tree-sha1 = "b81c5035922cc89c2d9523afc6c54be512411466"
+git-tree-sha1 = "29321314c920c26684834965ec2ce0dacc9cf8e5"
 uuid = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
-version = "0.34.5"
+version = "0.34.4"
 
 [[deps.StatsFuns]]
 deps = ["HypergeometricFunctions", "IrrationalConstants", "LogExpFunctions", "Reexport", "Rmath", "SpecialFunctions"]
-git-tree-sha1 = "8e45cecc66f3b42633b8ce14d431e8e57a3e242e"
+git-tree-sha1 = "b423576adc27097764a90e163157bcfc9acf0f46"
 uuid = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
-version = "1.5.0"
+version = "1.3.2"
 
     [deps.StatsFuns.extensions]
     StatsFunsChainRulesCoreExt = "ChainRulesCore"
@@ -3712,9 +3136,9 @@ version = "1.5.0"
 
 [[deps.StructArrays]]
 deps = ["ConstructionBase", "DataAPI", "Tables"]
-git-tree-sha1 = "8ad2e38cbb812e29348719cc63580ec1dfeb9de4"
+git-tree-sha1 = "5a3a31c41e15a1e042d60f2f4942adccba05d3c9"
 uuid = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
-version = "0.7.1"
+version = "0.7.0"
 weakdeps = ["Adapt", "GPUArraysCore", "KernelAbstractions", "LinearAlgebra", "SparseArrays", "StaticArrays"]
 
     [deps.StructArrays.extensions]
@@ -3723,12 +3147,6 @@ weakdeps = ["Adapt", "GPUArraysCore", "KernelAbstractions", "LinearAlgebra", "Sp
     StructArraysLinearAlgebraExt = "LinearAlgebra"
     StructArraysSparseArraysExt = "SparseArrays"
     StructArraysStaticArraysExt = "StaticArrays"
-
-[[deps.StructTypes]]
-deps = ["Dates", "UUIDs"]
-git-tree-sha1 = "159331b30e94d7b11379037feeb9b690950cace8"
-uuid = "856f2bd8-1eba-4b0a-8007-ebc267875bd4"
-version = "1.11.0"
 
 [[deps.StyledStrings]]
 uuid = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
@@ -3782,14 +3200,14 @@ uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 version = "0.11.3"
 
 [[deps.Tricks]]
-git-tree-sha1 = "6cae795a5a9313bbb4f60683f7263318fc7d1505"
+git-tree-sha1 = "7822b97e99a1672bfb1b49b668a6d46d58d8cbcb"
 uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
-version = "0.1.10"
+version = "0.1.9"
 
 [[deps.URIs]]
-git-tree-sha1 = "cbbebadbcc76c5ca1cc4b4f3b0614b3e603b5000"
+git-tree-sha1 = "67db6cc7b3821e19ebe75791a9dd19c9b1188f2b"
 uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
-version = "1.5.2"
+version = "1.5.1"
 
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
@@ -3863,107 +3281,113 @@ git-tree-sha1 = "5db3e9d307d32baba7067b13fc7b5aa6edd4a19a"
 uuid = "2381bf8a-dfd0-557d-9999-79630e7b1b91"
 version = "1.36.0+0"
 
-[[deps.WoodburyMatrices]]
-deps = ["LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "c1a7aa6219628fcd757dede0ca95e245c5cd9511"
-uuid = "efce3f68-66dc-5838-9240-27a6d6f5f9b6"
-version = "1.0.0"
-
 [[deps.XML2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Zlib_jll"]
-git-tree-sha1 = "b8b243e47228b4a3877f1dd6aee0c5d56db7fcf4"
+git-tree-sha1 = "a2fccc6559132927d4c5dc183e3e01048c6dcbd6"
 uuid = "02c8fc9c-b97f-50b9-bbe4-9be30ff0a78a"
-version = "2.13.6+1"
+version = "2.13.5+0"
+
+[[deps.XSLT_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Libgcrypt_jll", "Libgpg_error_jll", "Libiconv_jll", "XML2_jll", "Zlib_jll"]
+git-tree-sha1 = "7d1671acbe47ac88e981868a078bd6b4e27c5191"
+uuid = "aed1982a-8fda-507f-9586-7b0439959a61"
+version = "1.1.42+0"
 
 [[deps.XZ_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "fee71455b0aaa3440dfdd54a9a36ccef829be7d4"
+git-tree-sha1 = "beef98d5aad604d9e7d60b2ece5181f7888e2fd6"
 uuid = "ffd25f8a-64ca-5728-b0f7-c24cf3aae800"
-version = "5.8.1+0"
+version = "5.6.4+0"
 
 [[deps.Xorg_libICE_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a3ea76ee3f4facd7a64684f9af25310825ee3668"
+git-tree-sha1 = "326b4fea307b0b39892b3e85fa451692eda8d46c"
 uuid = "f67eecfb-183a-506d-b269-f58e52b52d7c"
-version = "1.1.2+0"
+version = "1.1.1+0"
 
 [[deps.Xorg_libSM_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libICE_jll"]
-git-tree-sha1 = "9c7ad99c629a44f81e7799eb05ec2746abb5d588"
+git-tree-sha1 = "3796722887072218eabafb494a13c963209754ce"
 uuid = "c834827a-8449-5923-a945-d239c165b7dd"
-version = "1.2.6+0"
+version = "1.2.4+0"
 
 [[deps.Xorg_libX11_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libxcb_jll", "Xorg_xtrans_jll"]
-git-tree-sha1 = "b5899b25d17bf1889d25906fb9deed5da0c15b3b"
+git-tree-sha1 = "9dafcee1d24c4f024e7edc92603cedba72118283"
 uuid = "4f6342f7-b3d2-589e-9d20-edeb45f2b2bc"
-version = "1.8.12+0"
+version = "1.8.6+3"
 
 [[deps.Xorg_libXau_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "aa1261ebbac3ccc8d16558ae6799524c450ed16b"
+git-tree-sha1 = "2b0e27d52ec9d8d483e2ca0b72b3cb1a8df5c27a"
 uuid = "0c0b7dd1-d40b-584c-a123-a41640f87eec"
-version = "1.0.13+0"
+version = "1.0.11+3"
 
 [[deps.Xorg_libXcursor_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXfixes_jll", "Xorg_libXrender_jll"]
-git-tree-sha1 = "6c74ca84bbabc18c4547014765d194ff0b4dc9da"
+git-tree-sha1 = "807c226eaf3651e7b2c468f687ac788291f9a89b"
 uuid = "935fb764-8cf2-53bf-bb30-45bb1f8bf724"
-version = "1.2.4+0"
+version = "1.2.3+0"
 
 [[deps.Xorg_libXdmcp_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "52858d64353db33a56e13c341d7bf44cd0d7b309"
+git-tree-sha1 = "02054ee01980c90297412e4c809c8694d7323af3"
 uuid = "a3789734-cfe1-5b06-b2d0-1dd0d9d62d05"
-version = "1.1.6+0"
+version = "1.1.4+3"
 
 [[deps.Xorg_libXext_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "a4c0ee07ad36bf8bbce1c3bb52d21fb1e0b987fb"
+git-tree-sha1 = "d7155fea91a4123ef59f42c4afb5ab3b4ca95058"
 uuid = "1082639a-0dae-5f34-9b06-72781eeb8cb3"
-version = "1.3.7+0"
+version = "1.3.6+3"
 
 [[deps.Xorg_libXfixes_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "9caba99d38404b285db8801d5c45ef4f4f425a6d"
+git-tree-sha1 = "6fcc21d5aea1a0b7cce6cab3e62246abd1949b86"
 uuid = "d091e8ba-531a-589c-9de9-94069b037ed8"
-version = "6.0.1+0"
+version = "6.0.0+0"
 
 [[deps.Xorg_libXi_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll", "Xorg_libXfixes_jll"]
-git-tree-sha1 = "a376af5c7ae60d29825164db40787f15c80c7c54"
+git-tree-sha1 = "984b313b049c89739075b8e2a94407076de17449"
 uuid = "a51aa0fd-4e3c-5386-b890-e753decda492"
-version = "1.8.3+0"
+version = "1.8.2+0"
 
 [[deps.Xorg_libXinerama_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll"]
-git-tree-sha1 = "a5bc75478d323358a90dc36766f3c99ba7feb024"
+git-tree-sha1 = "a1a7eaf6c3b5b05cb903e35e8372049b107ac729"
 uuid = "d1454406-59df-5ea1-beac-c340f2130bc3"
-version = "1.1.6+0"
+version = "1.1.5+0"
 
 [[deps.Xorg_libXrandr_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll", "Xorg_libXrender_jll"]
-git-tree-sha1 = "aff463c82a773cb86061bce8d53a0d976854923e"
+git-tree-sha1 = "b6f664b7b2f6a39689d822a6300b14df4668f0f4"
 uuid = "ec84b674-ba8e-5d96-8ba1-2a689ba10484"
-version = "1.5.5+0"
+version = "1.5.4+0"
 
 [[deps.Xorg_libXrender_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "7ed9347888fac59a618302ee38216dd0379c480d"
+git-tree-sha1 = "a490c6212a0e90d2d55111ac956f7c4fa9c277a6"
 uuid = "ea2f1a96-1ddc-540d-b46f-429655e07cfa"
-version = "0.9.12+0"
+version = "0.9.11+1"
+
+[[deps.Xorg_libpthread_stubs_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "fee57a273563e273f0f53275101cd41a8153517a"
+uuid = "14d82f49-176c-5ed1-bb49-ad3f5cbd8c74"
+version = "0.1.1+3"
 
 [[deps.Xorg_libxcb_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXau_jll", "Xorg_libXdmcp_jll"]
-git-tree-sha1 = "bfcaf7ec088eaba362093393fe11aa141fa15422"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "XSLT_jll", "Xorg_libXau_jll", "Xorg_libXdmcp_jll", "Xorg_libpthread_stubs_jll"]
+git-tree-sha1 = "1a74296303b6524a0472a8cb12d3d87a78eb3612"
 uuid = "c7cfdc94-dc32-55de-ac96-5a1b8d977c5b"
-version = "1.17.1+0"
+version = "1.17.0+3"
 
 [[deps.Xorg_libxkbfile_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "e3150c7400c41e207012b41659591f083f3ef795"
+git-tree-sha1 = "dbc53e4cf7701c6c7047c51e17d6e64df55dca94"
 uuid = "cc61e674-0454-545c-8b26-ed2c68acab7a"
-version = "1.1.3+0"
+version = "1.1.2+1"
 
 [[deps.Xorg_xcb_util_cursor_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_xcb_util_image_jll", "Xorg_xcb_util_jll", "Xorg_xcb_util_renderutil_jll"]
@@ -4003,21 +3427,21 @@ version = "0.4.1+1"
 
 [[deps.Xorg_xkbcomp_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libxkbfile_jll"]
-git-tree-sha1 = "801a858fc9fb90c11ffddee1801bb06a738bda9b"
+git-tree-sha1 = "ab2221d309eda71020cdda67a973aa582aa85d69"
 uuid = "35661453-b289-5fab-8a00-3d9160c6a3a4"
-version = "1.4.7+0"
+version = "1.4.6+1"
 
 [[deps.Xorg_xkeyboard_config_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_xkbcomp_jll"]
-git-tree-sha1 = "00af7ebdc563c9217ecc67776d1bbf037dbcebf4"
+git-tree-sha1 = "691634e5453ad362044e2ad653e79f3ee3bb98c3"
 uuid = "33bec58e-1273-512f-9401-5d533626f822"
-version = "2.44.0+0"
+version = "2.39.0+0"
 
 [[deps.Xorg_xtrans_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a63799ff68005991f9d9491b6e95bd3478d783cb"
+git-tree-sha1 = "b9ead2d2bdb27330545eb14234a2e300da61232e"
 uuid = "c5fb5394-a638-5e4d-96e5-b29de1b5cf10"
-version = "1.6.0+0"
+version = "1.5.0+3"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]
@@ -4026,15 +3450,15 @@ version = "1.2.13+1"
 
 [[deps.Zstd_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "446b23e73536f84e8037f5dce465e92275f6a308"
+git-tree-sha1 = "622cf78670d067c738667aaa96c553430b65e269"
 uuid = "3161d3a3-bdf6-5164-811a-617609db77b4"
-version = "1.5.7+1"
+version = "1.5.7+0"
 
 [[deps.Zygote]]
 deps = ["AbstractFFTs", "ChainRules", "ChainRulesCore", "DiffRules", "Distributed", "FillArrays", "ForwardDiff", "GPUArrays", "GPUArraysCore", "IRTools", "InteractiveUtils", "LinearAlgebra", "LogExpFunctions", "MacroTools", "NaNMath", "PrecompileTools", "Random", "Requires", "SparseArrays", "SpecialFunctions", "Statistics", "ZygoteRules"]
-git-tree-sha1 = "8462a20f0fd85b4ef4a1b7310d33e7475d2bb14f"
+git-tree-sha1 = "0b3c944f5d2d8b466c5d20a84c229c17c528f49e"
 uuid = "e88e6eb3-aa80-5325-afca-941959d7151f"
-version = "0.6.77"
+version = "0.6.75"
 
     [deps.Zygote.extensions]
     ZygoteColorsExt = "Colors"
@@ -4048,9 +3472,9 @@ version = "0.6.77"
 
 [[deps.ZygoteRules]]
 deps = ["ChainRulesCore", "MacroTools"]
-git-tree-sha1 = "434b3de333c75fc446aa0d19fc394edafd07ab08"
+git-tree-sha1 = "27798139afc0a2afa7b1824c206d5e87ea587a00"
 uuid = "700de1a5-db45-46bc-99cf-38207098b444"
-version = "0.2.7"
+version = "0.2.5"
 
 [[deps.eudev_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "gperf_jll"]
@@ -4060,9 +3484,9 @@ version = "3.2.9+0"
 
 [[deps.fzf_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "b6a34e0e0960190ac2a4363a1bd003504772d631"
+git-tree-sha1 = "6e50f145003024df4f5cb96c7fce79466741d601"
 uuid = "214eeab7-80f7-51ab-84ad-2988db7cef09"
-version = "0.61.1+0"
+version = "0.56.3+0"
 
 [[deps.gperf_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -4113,9 +3537,9 @@ version = "1.18.0+0"
 
 [[deps.libpng_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Zlib_jll"]
-git-tree-sha1 = "068dfe202b0a05b8332f1e8e6b4080684b9c7700"
+git-tree-sha1 = "b7bfd3ab9d2c58c3829684142f5804e4c6499abc"
 uuid = "b53b4c65-9356-5827-b1ea-8c7a1a84506f"
-version = "1.6.47+0"
+version = "1.6.45+0"
 
 [[deps.libvorbis_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Ogg_jll", "Pkg"]
@@ -4152,43 +3576,40 @@ uuid = "dfaa095f-4041-5dcd-9319-2fabd8486b76"
 version = "3.5.0+0"
 
 [[deps.xkbcommon_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Wayland_jll", "Wayland_protocols_jll", "Xorg_libxcb_jll", "Xorg_xkeyboard_config_jll"]
-git-tree-sha1 = "c950ae0a3577aec97bfccf3381f66666bc416729"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Wayland_jll", "Wayland_protocols_jll", "Xorg_libxcb_jll", "Xorg_xkeyboard_config_jll"]
+git-tree-sha1 = "63406453ed9b33a0df95d570816d5366c92b7809"
 uuid = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
-version = "1.8.1+0"
+version = "1.4.1+2"
 """
 
 # ╔═╡ Cell order:
-# ╟─54107cf5-8c8f-495f-8709-07b904ca98ae
-# ╟─e7509db7-bc59-4541-a145-cec0fa1b7c7a
 # ╟─6b17139e-6caf-4f07-a607-e403bf1ad794
 # ╠═14964632-98d8-4a2f-b2f6-e3f28b558803
 # ╟─117d0059-ce1a-497e-8667-a0c2ef20c632
 # ╟─60f72d30-ab80-11ef-3c20-270dbcdf0cc4
-# ╟─d7643abe-4619-4859-b2e3-9e932fe53b2f
+# ╟─f8612f4e-8519-4ee3-ac09-80b7c126b238
 # ╟─9f739929-1cd3-4935-b229-ae3aeac7e131
-# ╟─4eeaa9ae-eac5-478a-aca5-82de3dda24f7
+# ╟─be8c37e8-45db-4198-b0b9-d287e73fb818
 # ╟─0c520f93-49ce-45eb-899d-a31105d856c8
-# ╟─78181077-5548-459d-970d-1d8a9d63b72c
 # ╟─da5b4000-0bce-4fc2-be85-dada21264ca3
 # ╟─0456a732-2672-4108-a241-db9ae879a913
 # ╟─6e8ab7c9-fb49-4d89-946d-c7d7588c199a
 # ╟─fe044059-9102-4e7f-9888-d9f03eec69ff
-# ╟─41406be3-4c2d-41db-bdb4-9e2ff875cebe
 # ╟─a21612a1-1092-4892-9132-629833e7c867
 # ╟─ec776b30-6a30-4643-a22c-e071a365d50b
 # ╟─18754cc6-c089-4245-ad10-2848594e49b4
+# ╟─d566993e-587d-4aa3-995b-eb955dec5758
+# ╟─e888241c-b89f-4db4-ac35-6d826ec4c36c
 # ╟─c4fa9af9-1a79-43d7-9e8d-2854652a4ea2
 # ╟─6bad6e8b-c021-41d2-afbb-bcd0242138dd
 # ╟─dba42df0-3199-4c31-a735-b6b514703d50
+# ╟─a0a60728-4ee0-4fd0-bd65-c056956b9712
+# ╟─b0a4461b-89d0-48ee-9bcf-b544b9f08154
 # ╟─109c3d27-2c23-48a7-9fd7-be8a1f359e55
 # ╟─bc2f62f5-1330-46cd-bb81-411baa483488
-# ╟─bed9a6ed-3ca0-492d-9141-a34b601ea315
 # ╟─a46702a3-4a8c-4749-bd00-52f8cce5b8ee
-# ╟─8469fe70-8cf6-43c1-b16b-d4b970a2c807
+# ╟─7e9405c4-1d1d-4cfa-9fab-a3471c8ad119
 # ╟─fd8c851a-3a42-41c5-b0fd-a12085543c9b
-# ╟─84d9c552-2e78-4922-9ec0-4d12d0c62643
-# ╟─e6e675bf-5181-4e45-8c5d-e576aa411064
 # ╟─17fa8557-9656-4347-9d44-213fd3b635a6
 # ╠═22feee3d-4627-4358-9937-3c780b7e8bcb
 # ╠═6f3e24de-094c-49dc-b892-6721b3cc54ed
@@ -4198,129 +3619,115 @@ version = "1.8.1+0"
 # ╠═ab4c6807-5b4e-4688-b794-159e26a1599b
 # ╟─e86d260f-c93d-4561-a9f1-44e4c7af827e
 # ╟─166bd412-d433-4dc9-b874-7359108c0a8b
-# ╟─cf42542a-f519-478d-a57e-652c420f4ed5
-# ╟─b6573f2b-52e5-4881-91e7-759d628bf7fe
-# ╟─a607813d-c76c-4a5a-9474-a1d8588b671b
-# ╟─bb4b252d-fc49-49d9-a31b-5092d73dc244
-# ╟─9d051b1b-dcf4-418c-988c-37561a10f485
-# ╟─9ea24b88-03b3-434f-a703-af197f754dcd
-# ╠═a67ea28d-3927-40f9-a049-b9faeb0cfa58
-# ╟─6ea3ba83-ade5-4a19-ad60-b3fe5c56e3b8
-# ╟─cd2adeb4-493f-4d37-8e0d-9501637c6000
-# ╟─42456abf-4930-4b01-afd1-fce3b4881e28
+# ╟─9132a200-f63b-444b-9830-b03cf075021b
 # ╠═c2ae204e-dbcc-453a-81f5-791ba4be39db
-# ╟─c8c1a321-39c8-4a78-bbcf-13663243c457
-# ╟─73da2a56-8991-4484-bcde-7d397214e552
-# ╟─fe7f4a79-1a63-4272-a776-358a309c8550
+# ╟─42456abf-4930-4b01-afd1-fce3b4881e28
+# ╠═bb3b33e6-fd05-4631-b0bd-c71ef3dbee38
 # ╠═254956d0-8f58-4e2b-b8a9-5dd10dd074a2
 # ╟─cc11217f-e070-4d20-8ebe-18e7eb977487
-# ╟─db5c210a-e783-40bf-892d-58a9fe5dfb23
-# ╠═b60c518f-41bb-4abd-b573-d3f8d29f60de
-# ╟─aced4250-12be-41ca-8caf-bc660e2d629b
-# ╟─66309827-bd01-417b-bf14-0240805139ca
-# ╟─402c0eaa-727f-4c54-89ec-64c3dfb8002c
+# ╟─73da2a56-8991-4484-bcde-7d397214e552
+# ╠═3385fcb3-8b93-4da8-ba75-77877cc77ce4
+# ╟─d4d057d7-cc9d-4949-9e3f-44a8aa67d725
+# ╟─a6603deb-57fa-403e-a2e5-1195ae7c016c
+# ╟─fe7f4a79-1a63-4272-a776-358a309c8550
+# ╟─e52ffc4f-947d-468e-9650-b6c67a57a62b
 # ╟─92f20cc7-8bc0-4aea-8c70-b0f759748fbf
 # ╟─a003beb6-6235-455c-943a-e381acd00c0e
-# ╟─d0a25025-9309-463f-a09a-9d7ea3df8143
-# ╟─de7a8c16-3048-4952-9185-b2048986c293
+# ╟─f6589984-e24d-4aee-b7e7-db159ae7fea6
 # ╠═fc2d34da-258c-4460-a0a4-c70b072f91ca
 # ╟─c494bb97-14ef-408c-9de1-ecabe221eea6
-# ╠═1bce2d86-cb46-4c44-ab62-b440115bf967
-# ╠═e8aea014-ca38-4cab-86c6-a445e6842bc2
-# ╠═466c6a8b-a3cf-42fe-998f-660d514798d6
 # ╟─e2418154-4471-406f-b900-97905f5d2f59
 # ╟─1789c8b5-b314-4aba-ad44-555be9a85984
 # ╟─beaec161-ad89-4f83-9066-f420a1d04d39
-# ╟─b21ab60c-df7b-4847-8325-8e9850dfb92d
 # ╟─535261e3-4cb3-4b0b-954d-7452b2a91b5d
 # ╟─c524297f-2bf3-4dd2-b7b4-fc5ce9a81738
-# ╟─c7c8277a-3846-41df-aba2-40c2a7bf5806
 # ╟─052cc2e3-ca8a-4043-9a7d-7947a7f1fd0c
-# ╟─02a4098f-a1ee-433c-aea7-8e8fc8a65088
 # ╟─ce99f0cc-5fe8-42c2-af78-ac7211b6b699
 # ╟─61173ec6-c7d6-44fa-8c47-5f7295dd49cf
-# ╟─c102a82b-6a21-4beb-a0bc-f1093b74ae10
+# ╟─d647ac21-738b-43e7-bbbd-582b6294560e
+# ╠═57d321cd-2029-4e49-8b56-9c5c48721ac4
+# ╟─b61b8f52-9bf3-4766-9208-3e40134a3573
+# ╟─57c5a6f0-2527-4988-9bf0-140495ba9b7e
+# ╠═7910c15c-a231-4a0f-a4ed-1fe0b52f62c7
+# ╟─cbc3a060-b4ec-4572-914c-e07880dd3537
 # ╟─f286f3b2-3bac-4384-9b40-522e974a14ee
 # ╟─307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
 # ╟─d0a3770a-2c48-42db-9a71-6b7f695f22d8
 # ╟─fda151a1-5069-44a8-baa1-d7903bc89797
-# ╟─a6ac99ee-2894-40d4-8dd5-35d551a0a041
+# ╟─e29b6ddd-d3da-4122-a561-18bc267e2047
 # ╟─8c78529c-1e00-472c-bb76-d984b37235ab
 # ╟─daada216-11d4-4f8b-807c-d347130a3928
-# ╟─e61657ef-961b-42af-89d7-e242d477ba1f
-# ╟─1cef8f2a-faee-4709-a0e9-6e5f2e3ce4cd
 # ╟─d18c2105-c2af-4dda-8388-617aa816a567
 # ╠═77637b5e-e3ce-4ecd-90fc-95611af18002
 # ╠═c4c0328d-8cb3-41d5-9740-0197cbf760c2
 # ╟─b1e9bd40-a401-4630-9a1f-d61b276e72f7
 # ╠═fe272c1b-421c-49de-a513-80c7bcefdd9b
 # ╟─4ea18122-b681-4de1-89e3-5fb7ce2f7a0b
-# ╟─0915d3d3-1557-44e6-875b-d9fa6ab6bba1
-# ╟─44c8fbe0-21e7-482b-84a9-c3d32a4737dd
-# ╟─f3cf88ca-8569-4e42-a9fc-436637b82364
-# ╟─782a2696-41a7-4bcf-8002-058d18d82840
+# ╟─a16cf110-4afa-4792-9d3f-f13b24349886
+# ╠═44c8fbe0-21e7-482b-84a9-c3d32a4737dd
+# ╟─772cf17e-0fdb-470e-9f12-9480af811edd
+# ╠═f005da72-d7b5-4f01-8882-ed4e2bdcf4bd
+# ╠═77a6e704-33e8-4241-84f0-0e58c29c06ef
+# ╟─7ef66a50-6acc-474f-b406-7b27a7b18510
+# ╟─e12b102e-785b-46e9-980c-e9f7943eda60
+# ╟─d75f34d3-384c-486b-b648-61ef8fd52167
 # ╟─bac5c489-553c-436f-b332-8a8e97126a51
 # ╟─1da9695f-b7fc-46eb-9ef9-12160246018d
 # ╟─0606d827-9c70-4a79-afa7-14fb6b806546
-# ╟─f180bd3a-12da-4942-b2af-2df2f5887201
+# ╟─9657f5ff-f21c-43c5-838d-402a2a723d5e
 # ╠═cb7b9b9f-59da-4851-ab13-c451c26117df
 # ╟─759534ca-b40b-4824-b7ec-3a5c06cbd23e
-# ╠═1ddf486f-6eb5-4962-a158-e43feaab055b
-# ╟─557f79f0-a4e3-4de9-b2e4-24f3fc307f3b
 # ╟─7987c20d-68e8-441b-bddc-3f0ae7c3591d
 # ╟─da2d692a-8378-435e-bd6b-c0e65caef542
 # ╟─23999cd9-543b-47dc-a0b2-e133ba95891e
 # ╟─38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
 # ╟─b417e370-efae-40e8-9247-5daf14fcc749
-# ╟─a1701563-1528-4aac-b7be-bbbb56de374b
 # ╟─60ab8107-db65-4fb6-aeea-d4978aed77bd
-# ╟─fa762985-56eb-4ea4-9c91-95731bf6a475
+# ╟─e86fb6e9-edcd-459b-b1fb-7338bb54d6c4
 # ╟─aa0c4ffc-d7f0-484e-a1e2-7f6f92a3a53d
 # ╟─e189b31e-7e24-4c32-989f-3e600a44d4bc
-# ╟─f8ea2983-c2d0-40ea-b949-9fc478ea45f8
-# ╟─155f2bfe-badd-46fe-9d1e-b73099be5e77
-# ╟─82d11960-a4b1-4e7e-9c7e-783351c9bcd5
 # ╟─7d054465-9f80-4dfb-9b5f-76c3977de7cd
 # ╠═1ec68a39-8de9-4fd3-be8a-26cf7706d1d6
 # ╟─d23f0299-981c-43b9-88f3-fb6e07927498
 # ╠═641b92a3-8ff2-4aed-8482-9fa686803b68
 # ╟─be426908-3fee-4ecd-b054-2497ce9a2e50
 # ╠═258e14c4-9a2d-4515-9a8f-8cd96f31a6ff
-# ╟─f55000b4-ca33-46a7-a776-c3249aa70355
-# ╟─08cdfc42-06c6-4d27-a846-4a0a0809c174
-# ╟─aee22151-51de-426b-8478-6a04284a4888
-# ╟─c22f039c-d7bb-4f7f-9284-cf66906f6390
+# ╠═797cbe41-a5f3-4179-9143-9ef6e6888a4d
+# ╟─35434537-9b9c-4528-b58c-420d01813598
+# ╠═3328d818-391a-440a-8f1b-f2b7f3e00958
+# ╠═06b14338-ea3b-45c8-bf6c-28b82db2ea70
+# ╟─204feed7-cde8-40a8-b6b5-051a1c768fd9
+# ╠═4ae85f59-4e94-48aa-8ccb-91311466c51f
 # ╟─e3d6fdf1-3a9e-446b-8482-49d6f64b652e
 # ╟─23fd490a-74d2-44b4-8a12-ea1460d95f85
 # ╟─18a70925-3c2a-4317-8bbc-c2a096ec56d0
 # ╟─45c79345-89da-498c-9a98-2ad55a0a6114
-# ╠═3df627c8-72a2-4e34-8109-4fa12f0b6e0d
+# ╠═3471a623-16af-481a-8f66-5bd1e7890188
 # ╟─4c5210d6-598f-4167-a6ee-93bceda7223b
-# ╟─6297f68d-dbd5-4270-b461-d7eb75d61cfd
-# ╠═1428627e-be78-44be-a248-78254a988a52
 # ╟─2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
 # ╟─ea2d7eb7-d576-415c-ac4c-fea7f90de637
 # ╟─7c473630-6555-4ada-85f3-0d40aefe6370
 # ╟─7fe1c3d7-469c-47d9-9d46-e5b8b263edb9
 # ╟─f6eb6d1a-a9a0-4234-8699-269a92f666c0
-# ╟─101ab5bc-00f4-4acd-b8b4-f8164d7cb030
 # ╟─74aeca7b-0658-427f-8c02-d093a0d725ee
-# ╟─5b1d8594-dd10-44f3-accf-d5060f75c1c8
+# ╟─36b510f5-31a2-4c94-9705-cd66e98e2e61
 # ╟─dbd088d1-f4c9-4e6a-b280-960b06da76e4
 # ╟─1bb92755-65e3-457e-84cd-252eae5e4d7e
 # ╟─6d5c805b-330c-4b04-a51c-15e674352b1b
 # ╟─d9ab8278-eb76-4a36-aa0e-4ec74704f5e0
 # ╟─860ec509-3a86-4842-9471-6b1a0b8f366d
+# ╠═54741d81-39e0-4a47-b84d-c41c8eb7611b
+# ╟─6559cf16-a474-4533-a2c7-ccbc02480a76
 # ╠═cfdba748-45d5-4eaa-97b3-fdc9fe7e4333
 # ╟─6beda870-0cb0-40f5-9531-fa3e2f7bb020
 # ╠═5c3d24f6-0106-444c-b7df-89bba8c01b37
-# ╟─16220c31-ce7d-4cd4-b66a-72527a7623b9
 # ╟─4edc5933-9457-4c7c-8456-a26974e0587e
 # ╟─95e3d42f-b33f-4294-81c5-f34a300dc9b4
 # ╟─ba6c082b-6e62-42fc-a85c-c8b7efc89b88
-# ╟─02fac8f9-b442-40d7-b3f3-415a10570e8e
+# ╟─5aef09eb-ddc5-4b99-abf2-568621b871d5
 # ╟─173388ab-207a-42a6-b364-b2c1cb335f6b
-# ╟─20cb2d9b-ad2d-4d06-be09-03bd5396687a
+# ╟─38b64ee2-5372-4374-80e8-fbf203021a61
+# ╟─50f1c7a3-9219-40ce-a060-77beb243b7af
 # ╟─5563f0da-7552-4879-a38a-ba1748d39d52
 # ╟─98cbe931-d362-4039-97ba-41e0049619a3
 # ╟─247f4c17-bee1-4315-aff9-017407ef9219
@@ -4329,6 +3736,6 @@ version = "1.8.1+0"
 # ╟─6c8b3077-876e-42fd-aa47-f3fa7c37f4dd
 # ╟─97042a5e-9691-493f-802e-2262f2da4627
 # ╟─9865ed62-b4fd-4e49-9259-3e5997c589f3
-# ╠═ef084fea-bf4d-48d9-9c84-8cc1dd98f2d7
+# ╟─ef084fea-bf4d-48d9-9c84-8cc1dd98f2d7
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
