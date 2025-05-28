@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.8
+# v0.20.9
 
 using Markdown
 using InteractiveUtils
@@ -60,7 +60,7 @@ md"**Summary of the notebook:**
 |:----------------------------------|:------------------------------------------|
 | Small system (1D Gaussian)         | Adaptive importance sampling estimation (Cross entropy method), Bayesian estimation (Beta distribution) |
 | Medium system (Inverted Pendulum)  | Sequential Monte Carlo estimation (aka. Particle filtering) |
-| Large system (Aircraft Collision Avoidance) | - |
+| Large system (Aircraft Collision Avoidance) | Bridge sampling estimation |
 
 "
 
@@ -1117,6 +1117,7 @@ begin
 	function perturb(sys::MediumSystem, ψ, samples, ḡ)
 		new_samples = []
 	    for sample in samples
+			k_max, m_burnin, m_skip = 5, 1, 1  ## ⚠️
 			## p̄， g， τ， k_max， m_burnin， m_skip
 	        alg = MCMCSampling(ḡ, inverted_pendulum_kernel, sample,
 	                           k_max, m_burnin, m_skip)
@@ -1127,6 +1128,7 @@ begin
 	end
 
 	function p̄failure_smooth(ψ, p, τ; ϵ=0.15)
+		## Δ is the scaler, p the prior over trajectory
 	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
 	    return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)
 	end
@@ -1143,33 +1145,33 @@ begin
 	    τs = [rollout(sys, p) for i in 1:m]
 	    ws = [ḡs[1](τ) / p(τ) for τ in τs]
 		# p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
-	 #    for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
-		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## ⚠️ No hard failure dist
+	    # for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
+		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## No hard failure
 	        τs′ = perturb(sys, ψ, τs, ḡ)
 	        ws .*= [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs′]
 			println(ws[1:5])
 		    if sum(ws) > 0.0
-		        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)]  ## resample
-				# τs = sample(τs′, Weights(ws), m; replace=true) ## resample
-				ws .= mean(ws)
+				## importance resample
+		        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)] 
+				# τs = sample(τs′, Weights(ws), m; replace=true)
 		    else
 		        @warn "All weights are zero, skipping resampling"
 		    end
+			ws .= mean(ws)
 	    end
 		println("👉 ", mean(ws))
 		println(" ")
 	    return mean(ws) 
 	end
-
-	k_max, m_burnin, m_skip = 5, 1, 1  ## perturb() ⚠️ 
+ 
 	@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
 		# TODO: WRITE YOUR CODE HERE
 		d = get_depth(sys)
 		p = NominalTrajectoryDistribution(sys, d)
 		## Large ε (close to nominal) → small ε (close to hard failure)  
 		ϵs = [1.0, 0.5, 0.25, 0.19] ## ⚠️
-		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
 		m = 15 ## number of samples ⚠️
+		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
 		# return 0.00815588  ## true failure probability
 		return estimate(SequentialMonteCarloEstimation(p, ḡs, perturb, m), sys, ψ)
 	end
@@ -1210,6 +1212,150 @@ Markdown.MD(
 	depth_highlight(sys_large),
 	md"_(Same large system as Project 1)_"
 )
+
+# ╔═╡ 3df627c8-72a2-4e34-8109-4fa12f0b6e0d
+## Bridge sampling estimation
+begin
+	using StatsFuns: logsumexp
+	
+	function bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
+	    ḡ₁s, ḡ₂s = ḡ₁.(g₁τs), ḡ₂.(g₂τs)
+	    ḡb₁s, ḡb₂s = ḡb.(g₁τs), ḡb.(g₂τs)
+	    return mean(ḡb₂s ./ ḡ₂s) / mean(ḡb₁s ./ ḡ₁s)
+	end
+	
+	function optimal_bridge(g₁τs, ḡ₁, g₂τs, ḡ₂, k_max)
+		# ratio = 1.0
+	    log_ratio = 0.0
+	    m₁, m₂ = length(g₁τs), length(g₂τs)
+ 		for k in k_max
+			# ḡb(τ) = (ḡ₁(τ) * ḡ₂(τ)) / (m₁ * ḡ₁(τ) + ratio * m₂ * ḡ₂(τ))
+			# ratio = bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
+			ḡ₁s = τ -> ḡ₁(τ) - maximum(ḡ₁.(g₁τs))
+			ḡ₂s = τ -> ḡ₂(τ) - maximum(ḡ₂.(g₂τs))
+			ḡb = τ -> ḡ₁s(τ) + ḡ₂s(τ) - logsumexp(
+			    log(m₁) + ḡ₁s(τ),
+			    log_ratio + log(m₂) + ḡ₂s(τ)
+			)
+			log_ratios₂ = [ḡb(τ) - ḡ₂s(τ) for τ in g₂τs]
+			log_ratios₁ = [ḡb(τ) - ḡ₁s(τ) for τ in g₁τs]
+			log_num = logsumexp(log_ratios₂) - log(length(log_ratios₂))
+			log_den = logsumexp(log_ratios₁) - log(length(log_ratios₁))
+			log_ratio = log_num - log_den
+			println("log_ratio = $(log_ratio)")
+	    end
+		return log_ratio
+	end
+
+	## CAS trajectory distribution
+	struct CASTrajectoryDistribution <: TrajectoryDistribution
+		h1
+		dh1
+		a_prev1
+		τ1
+		μs  ## vector of env disturbance means, length d
+		σs  ## vector of env disturbance deviations, length d
+	end
+	
+	function StanfordAA228V.initial_state_distribution(
+		p::CASTrajectoryDistribution)
+	    return product_distribution(
+	        Uniform(p.h1 - 1e-6, p.h1 + 1e-6),          ## Initial h
+	        Uniform(p.dh1 - 1e-7, p.dh1 + 1e-7),        ## Initial dh
+	        DiscreteNonParametric([p.a_prev1], [1.0]),  ## Initial a_prev
+	        DiscreteNonParametric([p.τ1], [1.0])        ## Initial τ
+		)
+	end
+	
+	function StanfordAA228V.disturbance_distribution(
+		p::CASTrajectoryDistribution, t)
+	    D = DisturbanceDistribution((o)   -> Deterministic(),
+	                                (s,a) -> Normal(p.μs[t], p.σs[t]),
+	                                (s)   -> Deterministic())
+	    return D
+	end
+	
+	StanfordAA228V.depth(p::CASTrajectoryDistribution) = length(p.μs)
+	
+	function cas_kernel(τ; σ=0.01) 
+		h1, dh1, a_prev1, τ1 = τ[1].s  ## initial state components
+		## environment disturbance
+		μs, σs = [step.x.xs for step in τ], [σ for _ in τ]
+		return CASTrajectoryDistribution(h1, dh1, a_prev1, τ1, μs, σs)
+	end
+
+	function sample_failures_large(alg::MCMCSampling, sys, ψ)
+	    p̄, g, τ = alg.p̄, alg.g, alg.τ
+	    k_max, m_burnin, m_skip = alg.k_max, alg.m_burnin, alg.m_skip
+	    τs = []
+	    for k in 1:k_max
+	        τ′ = rollout(sys, g(τ))
+			## It seems that pdf(g(τ′), τ)) == pdf(g(τ), τ′) in this case.
+	        # if rand() < (p̄(τ′) * pdf(g(τ′), τ)) / (p̄(τ) * pdf(g(τ), τ′))
+			if log(rand()) < p̄(τ′) + logpdf(g(τ′), τ) - p̄(τ) - logpdf(g(τ), τ′)
+	            τ = τ′
+	        end
+	        push!(τs, τ)
+	    end
+	    return τs[m_burnin:m_skip:end]
+	end
+	
+	function perturb(sys::LargeSystem, ψ, samples, ḡ)
+		new_samples = []
+	    for sample in samples
+			k_max, m_burnin, m_skip = 10, 1, 1  ## ⚠️
+			## p̄， g， τ， k_max， m_burnin， m_skip
+	        alg = MCMCSampling(ḡ, cas_kernel, sample,
+	                           k_max, m_burnin, m_skip)
+	        mcmc_samples = sample_failures_large(alg, sys, ψ)
+	        push!(new_samples, mcmc_samples[end])
+	    end
+	    return new_samples
+	end
+	
+	struct BridgeSamplingEstimation
+	    p       # nominal trajectory distribution
+	    ḡs      # intermediate distributions
+	    perturb # τ′ = perturb(τ, ḡ′)
+	    m       # number of samples from each intermediate distribution
+	    kb      # number of iterations for estimating optimal bridge
+	end
+
+	function estimate(alg::BridgeSamplingEstimation, sys, ψ)
+	    p, ḡs, perturb, m, kb = alg.p, alg.ḡs, alg.perturb, alg.m, alg.kb
+	    log_p̄fail = 0.0
+		τs = [rollout(sys, p) for i in 1:m]
+		# p̄failure(τ) = isfailure(ψ, τ) * logpdf(p, τ)  ## hard failure distribution
+	    # for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
+		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## No hard failure
+	        ws = [ḡ′(τ) - ḡ(τ) for τ in τs]
+		    τs′ = τs[rand(Categorical(ws ./ sum(ws)), m)]  ## importance resampling
+	        τs′ = perturb(sys, ψ, τs′, ḡ′)
+	        log_ratio = optimal_bridge(τs′, ḡ′, τs, ḡ, kb)
+	        log_p̄fail += log_ratio
+	        τs = τs′
+	    end
+		println("👉 ", exp(log_p̄fail))
+	    return exp(log_p̄fail) 
+	end
+
+	function p̄failure_smooth_large(ψ, p, τ; ϵ=0.15)
+	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)  ## e.g. 270  
+	    # return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)  ## e.g. 1e-200 and 1e-36
+		return logpdf(Normal(0, ϵ), Δ) + logpdf(p, τ)
+	end
+ 
+	@large function estimate_probability(sys::LargeSystem, ψ; n=max_steps(sys))
+		# TODO: WRITE YOUR CODE HERE
+		d = get_depth(sys)
+		p = NominalTrajectoryDistribution(sys, d)
+		m, kb = 115, 3 ## ⚠️
+		ϵs = [1.0, 0.1, 0.01, 0.001] ## ⚠️
+		ḡs = [τ -> p̄failure_smooth_large(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
+		# return 0.00018285333333333334  ## true failure probability 1.8e-4
+		return estimate(BridgeSamplingEstimation(p, ḡs, perturb, m, kb), sys, ψ)
+	end
+end
 
 # ╔═╡ d23f0299-981c-43b9-88f3-fb6e07927498
 md"""
@@ -1276,129 +1422,6 @@ Please fill in the following `estimate_probability` function.
 # ╔═╡ 18a70925-3c2a-4317-8bbc-c2a096ec56d0
 start_code()
 
-# ╔═╡ 3df627c8-72a2-4e34-8109-4fa12f0b6e0d
-## Bridge sampling estimation
-begin
-	function bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
-	    ḡ₁s, ḡ₂s = ḡ₁.(g₁τs), ḡ₂.(g₂τs)
-	    ḡb₁s, ḡb₂s = ḡb.(g₁τs), ḡb.(g₂τs)
-	    return mean(ḡb₂s ./ ḡ₂s) / mean(ḡb₁s ./ ḡ₁s)
-	end
-	
-	function optimal_bridge(g₁τs, ḡ₁, g₂τs, ḡ₂, k_max)
-	    ratio = 1.0
-	    m₁, m₂ = length(g₁τs), length(g₂τs)
-		ḡb(τ) = (ḡ₁(τ) * ḡ₂(τ)) / (m₁ * ḡ₁(τ) + ratio * m₂ * ḡ₂(τ))
-	    for k in k_max
-	        ratio = bridge_sampling_estimator(g₁τs, ḡ₁, g₂τs, ḡ₂, ḡb)
-	    end
-	    return ḡb
-	end
-
-	## CAS trajectory distribution
-	struct CASTrajectoryDistribution <: TrajectoryDistribution
-		h1
-		dh1
-		a_prev1
-		τ1
-		μs  ## vector of env disturbance means, length d
-		σs  ## vector of env disturbance deviations, length d
-	end
-	
-	function StanfordAA228V.initial_state_distribution(
-		p::CASTrajectoryDistribution)
-	    return product_distribution(
-	        Uniform(p.h1 - 1e-6, p.h1 + 1e-6),          ## Initial h
-	        Uniform(p.dh1 - 1e-6, p.dh1 + 1e-6),        ## Initial dh
-	        DiscreteNonParametric([p.a_prev1], [1.0]),  ## Initial a_prev
-	        DiscreteNonParametric([p.τ1], [1.0])        ## Initial τ
-		)
-	end
-	
-	function StanfordAA228V.disturbance_distribution(
-		p::CASTrajectoryDistribution, t)
-	    D = DisturbanceDistribution((o)   -> Deterministic(),
-	                                (s,a) -> Normal(p.μs[t], p.σs[t]),
-	                                (s)   -> Deterministic())
-	    return D
-	end
-	
-	StanfordAA228V.depth(p::CASTrajectoryDistribution) = length(p.μs)
-	
-	function cas_kernel(τ; σ=0.01) 
-		h1, dh1, a_prev1, τ1 = τ[1].s  ## Initial state components
-		## environment disturbance
-		μs, σs = [step.x.xs for step in τ], [σ for _ in τ]
-		return CASTrajectoryDistribution(h1, dh1, a_prev1, τ1, μs, σs)
-	end
-	
-	function perturb(sys::LargeSystem, ψ, samples, ḡ)
-		new_samples = []
-	    for sample in samples
-			## p̄， g， τ， k_max， m_burnin， m_skip
-	        alg = MCMCSampling(ḡ, cas_kernel, sample,
-	                           k_max, m_burnin, m_skip)
-	        mcmc_samples = sample_failures(alg, sys, ψ)
-	        push!(new_samples, mcmc_samples[end])
-	    end
-	    return new_samples
-	end
-	
-	struct BridgeSamplingEstimation
-	    p       # nominal trajectory distribution
-	    ḡs      # intermediate distributions
-	    perturb # τ′ = perturb(τ, ḡ′)
-	    m       # number of samples from each intermediate distribution
-	    kb      # number of iterations for estimating optimal bridge
-	end
-
-	function estimate(alg::BridgeSamplingEstimation, sys, ψ)
-	    p, ḡs, perturb, m, kb = alg.p, alg.ḡs, alg.perturb, alg.m, alg.kb
-	    p̄fail = 1.0
-		τs = [rollout(sys, p) for i in 1:m]
-		p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure distribution
-	    for (ḡ, ḡ′) in zip([p; ḡs...], [ḡs...; p̄failure])
-			# println("👉 ḡ -> $ḡ")
-			# for τ in τs
-			#     println("👉 ḡ′(τ) = ", ḡ′(τ), ", ḡ(τ) = ", ḡ(τ))
-			# end
-	        ws = [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs]
-		    if sum(ws) > 0.0
-		        τs′ = τs[rand(Categorical(ws ./ sum(ws)), m)]  ## resample
-		    else
-				τs′ = τs
-		        # @warn "All weights are zero or NaN, skipping resampling"
-		    end
-	        τs′ = perturb(sys, ψ, τs′, ḡ′)
-	        ḡb = optimal_bridge(τs′, ḡ′, τs, ḡ, kb)
-	        ratio = bridge_sampling_estimator(τs′, ḡ′, τs, ḡ, ḡb)
-	        p̄fail *= ratio
-	        τs = τs′
-	    end
-	    return p̄fail 
-	end
-
-	function p̄failure_smooth_large(ψ, p, τ; ϵ=0.15)
-	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
-		Δ = min(Δ, 10.0)
-		println("👉 logpdf(Normal(0, ϵ), Δ) = $(logpdf(Normal(0, ϵ), Δ))")
-		println("   logpdf(p, τ) = $(logpdf(p, τ))")
-	    # return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)   ## underflow problem
-		return logpdf(Normal(0, ϵ), Δ) + logpdf(p, τ)
-	end
-
-	@large function estimate_probability(sys::LargeSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		p = NominalTrajectoryDistribution(sys, d)
-		m, kb = 10, 10 ## ⚠️
-		ϵs = [1.0, 0.5, 0.2, 0.1, 0.01] ## ⚠️
-		ḡs = [τ -> p̄failure_smooth_large(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
-		# return 0.00018285333333333334  ## true failure probability
-		return estimate(BridgeSamplingEstimation(p, ḡs, perturb, m, kb), sys, ψ)
-	end
-end
-
 # ╔═╡ 4c5210d6-598f-4167-a6ee-93bceda7223b
 end_code()
 
@@ -1448,10 +1471,9 @@ Distributions.ProductDistribution{
 # ╔═╡ 1428627e-be78-44be-a248-78254a988a52
 ## Nov05: code explanation
 begin
-	p = NominalTrajectoryDistribution(sys_medium, get_depth(sys_medium))
-	println(rollout(sys_medium, p)[end])
 	p = NominalTrajectoryDistribution(sys_large, get_depth(sys_large))
 	println(rollout(sys_large, p)[20])
+	println(rollout(sys_large, p)[end])
 end
 
 # ╔═╡ 2ba2d3a2-3f6c-4d5f-8c45-8d00947f6e05
@@ -2147,6 +2169,7 @@ ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 StanfordAA228V = "6f6e590e-f8c2-4a21-9268-94576b9fb3b1"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
@@ -2162,6 +2185,7 @@ PlutoUI = "~0.7.60"
 ProgressLogging = "~0.1.4"
 ReverseDiff = "~1.15.3"
 StanfordAA228V = "~0.1.16"
+StatsFuns = "~1.5.0"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -2170,7 +2194,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.11.5"
 manifest_format = "2.0"
-project_hash = "91538048e08f7fd4297122351360ee0fbc7dca09"
+project_hash = "b40ca98ed8f186825f7110b9512d975ad7b2fcb5"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "e2478490447631aedba0823d4d7a80b2cc8cdb32"
