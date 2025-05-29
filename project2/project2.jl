@@ -486,6 +486,24 @@ where $\neg\psi(\tau_i)$ checks if trajectory $\tau_i$ is a failure, `isfailure(
 _This is equivalent to `DirectEstimation` (algorithm 7.1)._
 """)
 
+# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
+@tracked function estimate_probability_baseline(sys, ψ; n=max_steps(sys))
+	d = get_depth(sys)
+	m = n ÷ d                                  # Get num. rollouts (\div for ÷)
+	pτ = NominalTrajectoryDistribution(sys, d) # Nominal trajectory distribution
+	τs = [rollout(sys, pτ; d) for _ in 1:m]    # Rollout with pτ, m*d steps
+	return mean(isfailure.(ψ, τs))             # Frequentist estimate of P(fail)
+end
+
+# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
+function run_baseline(sys::System, ψ; seed=4)
+	Random.seed!(seed)
+	pfail = estimate_probability_baseline(sys, ψ)
+	n = stepcount()
+	d = get_depth(sys)
+	return (pfail=pfail, n=n, m=n÷d) # return these variables as a NamedTuple
+end
+
 # ╔═╡ cc11217f-e070-4d20-8ebe-18e7eb977487
 highlight(md"""**Note**: You can access the number of `step` calls via `stepcount()`""")
 
@@ -500,6 +518,92 @@ start_code()
 
 # ╔═╡ de7a8c16-3048-4952-9185-b2048986c293
 md"✅ Check [my **Bayesian estimation** solution notebook in HTML](https://nov05.github.io/htmls/stanford/Stanford-AA228VProjects/project2-small-bayesian.html)." 
+
+# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
+## Cross entropy estimation
+begin
+	struct ImportanceSamplingEstimation
+	    p  # nominal distribution
+	    q  # proposal distribution
+	    m  # number of samples
+	end
+	
+	function estimate(alg::ImportanceSamplingEstimation, sys, ψ)
+	    p, q, m = alg.p, alg.q, alg.m
+	    τs = [rollout(sys, q) for i in 1:m]
+	    ps = [pdf(p, τ) for τ in τs]
+	    qs = [pdf(q, τ) for τ in τs]
+	    ws = ps ./ qs
+	    return mean(w * isfailure(ψ, τ) for (w, τ) in zip(ws, τs))
+	end
+
+	struct CrossEntropyEstimation
+	    p        # nominal trajectory distribution
+	    q₀       # initial proposal distribution
+	    f        # objective function f(τ, ψ)
+	    k_max    # number of iterations
+	    m        # number of samples per iteration
+	    m_elite  # number of elite samples
+	end
+	
+	function estimate(alg::CrossEntropyEstimation, sys::SmallSystem, ψ)
+	    k_max, m, m_elite = alg.k_max, alg.m, alg.m_elite
+	    p, q, f = alg.p, alg.q₀, alg.f
+		d = get_depth(sys)
+	    for _ in 1:k_max
+	        τs = [rollout(sys, q; d) for _ in 1:m]
+	        Y = [f(τ, ψ) for τ in τs]
+	        order = sortperm(Y)
+	        y = max(0, Y[order[m_elite]])
+	        ps = [pdf(p, τ) for τ in τs]
+	        qs = [pdf(q, τ) for τ in τs]
+	        ws = ps ./ qs
+	        ws[Y .> y] .= 0  ## set non-elite weights to zero
+	        q = fit(typeof(q), τs, ws=ws)
+	    end
+		println(" ")
+	    return estimate(ImportanceSamplingEstimation(p, q, m_IS), sys, ψ)
+	end
+
+	struct SmallProposalDistribution <: TrajectoryDistribution
+		μ
+		σ
+	end
+	
+	## Function disturbance_distribution() for the SmallSystem does not apply
+	function StanfordAA228V.disturbance_distribution(
+		p::SmallProposalDistribution, t)
+		D = DisturbanceDistribution((o) -> Deterministic(),
+									(s,a) -> Deterministic(),
+									(s) -> Deterministic()) 
+		return D
+	end
+	
+	function StanfordAA228V.initial_state_distribution(p::SmallProposalDistribution)
+		return Normal(p.μ, p.σ)
+	end
+
+	StanfordAA228V.depth(p::SmallProposalDistribution) = get_depth(sys_small)
+	
+	function Distributions.fit(::Type{SmallProposalDistribution}, samples::Vector; ws::Vector)
+	    xs = [τ[1].s for τ in samples] 
+	    p = fit(Normal, xs, ws)
+		println("μ = $(p.μ), σ = $(p.σ)")
+	    return SmallProposalDistribution(p.μ, p.σ)
+	end
+
+	m, m_elite, m_IS = 61, 5, 17  ## mean err = 0.005018
+	@small function estimate_probability(sys::SmallSystem, ψ; n=max_steps(sys))
+		# TODO: WRITE YOUR CODE HERE
+		d = get_depth(sys)
+		ps = Ps(sys.env)
+		p = NominalTrajectoryDistribution(sys, d)
+		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
+		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
+		k_max = div(n-m_IS, m)
+		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
+	end
+end
 
 # ╔═╡ c494bb97-14ef-408c-9de1-ecabe221eea6
 end_code()
@@ -544,6 +648,15 @@ begin
 	local τs = [rollout(sys_small, q; d=1) for _ in 1:10]
 	println("τ = $(τs[1])")
 	println("state = $(τs[1][1].s)")
+end
+
+# ╔═╡ 466c6a8b-a3cf-42fe-998f-660d514798d6
+## Nov05: code explanation. Distributions.jl
+begin
+	println(fit(Normal, [1.0, 2.0, 3.0]))
+	local samples = [randn(3) for _ in 1:100]
+	## fits a multivariate Normal
+	println(fit(MvNormal, hcat(samples...)))  ## 3×100 matrix
 end
 
 # ╔═╡ e2418154-4471-406f-b900-97905f5d2f59
@@ -701,6 +814,128 @@ Please fill in the following `estimate_probability` function.
 
 # ╔═╡ 0606d827-9c70-4a79-afa7-14fb6b806546
 start_code()
+
+# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
+## Sequencial Monte Carlo estimation (particle filtering)
+begin
+	# using StatsBase
+	
+	## Metropolis-Hastings algorithm (MCMC)
+	struct MCMCSampling
+	    p̄       # target density
+	    g       # kernel: τ′ = rollout(sys, g(τ))
+	    τ       # initial trajectory
+	    k_max   # max iterations
+	    m_burnin    # number of samples to discard from burn-in
+	    m_skip      # number of samples to skip for thinning
+	end
+	
+	function sample_failures(alg::MCMCSampling, sys, ψ)
+	    p̄, g, τ = alg.p̄, alg.g, alg.τ
+	    k_max, m_burnin, m_skip = alg.k_max, alg.m_burnin, alg.m_skip
+	    τs = []
+	    for k in 1:k_max
+	        τ′ = rollout(sys, g(τ)) 
+	        if rand() < (p̄(τ′) * pdf(g(τ′), τ)) / (p̄(τ) * pdf(g(τ), τ′))
+	            τ = τ′
+	        end
+	        push!(τs, τ)
+	    end
+	    return τs[m_burnin:m_skip:end]
+	end
+
+	## Pendulum trajectory distribution
+	struct PendulumTrajectoryDistribution <: TrajectoryDistribution
+		μ₁  ## mean of initial state distribution
+		Σ₁  ## covariance of initial state distribution
+		μs  ## vector of sensor disturbance means, length d
+		Σs  ## vector of sensor disturbance covariance, length d
+	end
+	
+	function StanfordAA228V.initial_state_distribution(
+		p::PendulumTrajectoryDistribution)
+	    return MvNormal(p.μ₁, p.Σ₁)
+	end
+	
+	function StanfordAA228V.disturbance_distribution(
+		p::PendulumTrajectoryDistribution, t)
+	    D = DisturbanceDistribution((o)   -> Deterministic(),
+	                                (s,a) -> Deterministic(),
+	                                (s)   -> MvNormal(p.μs[t], p.Σs[t]))
+	    return D
+	end
+	
+	StanfordAA228V.depth(p::PendulumTrajectoryDistribution) = length(p.μs)
+
+	function inverted_pendulum_kernel(τ; Σ=0.05^2 * I) 
+		## sensor disturbance means and variances
+		μs, Σs = [step.x.xo for step in τ], [Σ for _ in τ]
+		return PendulumTrajectoryDistribution(τ[1].s, Σ, μs, Σs)
+	end
+
+	## system specific perturb function
+	function perturb(sys::MediumSystem, ψ, samples, ḡ)
+		new_samples = []
+	    for sample in samples
+			k_max, m_burnin, m_skip = 5, 1, 1  ## ⚠️
+			## p̄， g， τ， k_max， m_burnin， m_skip
+	        alg = MCMCSampling(ḡ, inverted_pendulum_kernel, sample,
+	                           k_max, m_burnin, m_skip)
+	        mcmc_samples = sample_failures(alg, sys, ψ)
+	        push!(new_samples, mcmc_samples[end])
+	    end
+	    return new_samples
+	end
+
+	function p̄failure_smooth(ψ, p, τ; ϵ=0.15)
+		## Δ is the scaler, p the prior over trajectory
+	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
+	    return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)
+	end
+	
+	struct SequentialMonteCarloEstimation
+	    p           # nominal trajectory distribution
+	    ḡs          # intermediate distributions
+	    perturb     # τs′ = perturb(τs, ḡ)
+	    m           # number of samples
+	end
+
+	function estimate(alg::SequentialMonteCarloEstimation, sys, ψ)
+	    p, ḡs, perturb, m = alg.p, alg.ḡs, alg.perturb, alg.m
+	    τs = [rollout(sys, p) for i in 1:m]
+	    ws = [ḡs[1](τ) / p(τ) for τ in τs]
+		# p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
+	    # for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
+		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## No hard failure
+	        τs′ = perturb(sys, ψ, τs, ḡ)
+	        ws .*= [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs′]
+			println(ws[1:5])
+		    if sum(ws) > 0.0
+				## importance resample
+		        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)] 
+				# τs = sample(τs′, Weights(ws), m; replace=true)
+		    else
+		        @warn "All weights are zero, skipping resampling"
+		    end
+			ws .= mean(ws)
+	    end
+		println("👉 ", mean(ws))
+		println(" ")
+	    return mean(ws) 
+	end
+ 
+	@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
+		# TODO: WRITE YOUR CODE HERE
+		d = get_depth(sys)
+		p = NominalTrajectoryDistribution(sys, d)
+		## Large ε (close to nominal) → small ε (close to hard failure)  
+		ϵs = [1.0, 0.5, 0.25, 0.19] ## ⚠️
+		m = 15 ## number of samples ⚠️
+		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
+		# return 0.00815588  ## true failure probability
+		return estimate(SequentialMonteCarloEstimation(p, ḡs, perturb, m), sys, ψ)
+	end
+end
 
 # ╔═╡ 759534ca-b40b-4824-b7ec-3a5c06cbd23e
 end_code()
@@ -864,24 +1099,6 @@ estimate_probability(sys, ψ; n)::Float64
 and get a better estimate of the failure probability than a random baseline.
 """)
 
-# ╔═╡ c2ae204e-dbcc-453a-81f5-791ba4be39db
-@tracked function estimate_probability_baseline(sys, ψ; n=max_steps(sys))
-	d = get_depth(sys)
-	m = n ÷ d                                  # Get num. rollouts (\div for ÷)
-	pτ = NominalTrajectoryDistribution(sys, d) # Nominal trajectory distribution
-	τs = [rollout(sys, pτ; d) for _ in 1:m]    # Rollout with pτ, m*d steps
-	return mean(isfailure.(ψ, τs))             # Frequentist estimate of P(fail)
-end
-
-# ╔═╡ 254956d0-8f58-4e2b-b8a9-5dd10dd074a2
-function run_baseline(sys::System, ψ; seed=4)
-	Random.seed!(seed)
-	pfail = estimate_probability_baseline(sys, ψ)
-	n = stepcount()
-	d = get_depth(sys)
-	return (pfail=pfail, n=n, m=n÷d) # return these variables as a NamedTuple
-end
-
 # ╔═╡ c8c1a321-39c8-4a78-bbcf-13663243c457
 Markdown.MD(
 	Markdown.parse("""
@@ -939,101 +1156,6 @@ begin
 	""")
 end
 
-# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
-## Cross entropy estimation
-begin
-	struct ImportanceSamplingEstimation
-	    p  # nominal distribution
-	    q  # proposal distribution
-	    m  # number of samples
-	end
-	
-	function estimate(alg::ImportanceSamplingEstimation, sys, ψ)
-	    p, q, m = alg.p, alg.q, alg.m
-	    τs = [rollout(sys, q) for i in 1:m]
-	    ps = [pdf(p, τ) for τ in τs]
-	    qs = [pdf(q, τ) for τ in τs]
-	    ws = ps ./ qs
-	    return mean(w * isfailure(ψ, τ) for (w, τ) in zip(ws, τs))
-	end
-
-	struct CrossEntropyEstimation
-	    p        # nominal trajectory distribution
-	    q₀       # initial proposal distribution
-	    f        # objective function f(τ, ψ)
-	    k_max    # number of iterations
-	    m        # number of samples per iteration
-	    m_elite  # number of elite samples
-	end
-	
-	function estimate(alg::CrossEntropyEstimation, sys::SmallSystem, ψ)
-	    k_max, m, m_elite = alg.k_max, alg.m, alg.m_elite
-	    p, q, f = alg.p, alg.q₀, alg.f
-		d = get_depth(sys)
-	    for _ in 1:k_max
-	        τs = [rollout(sys, q; d) for _ in 1:m]
-	        Y = [f(τ, ψ) for τ in τs]
-	        order = sortperm(Y)
-	        y = max(0, Y[order[m_elite]])
-	        ps = [pdf(p, τ) for τ in τs]
-	        qs = [pdf(q, τ) for τ in τs]
-	        ws = ps ./ qs
-	        ws[Y .> y] .= 0  ## set non-elite weights to zero
-	        q = fit(typeof(q), τs, ws=ws)
-	    end
-		println(" ")
-	    return estimate(ImportanceSamplingEstimation(p, q, m_IS), sys, ψ)
-	end
-
-	struct SmallProposalDistribution <: TrajectoryDistribution
-		μ
-		σ
-	end
-	
-	## Function disturbance_distribution() for the SmallSystem does not apply
-	function StanfordAA228V.disturbance_distribution(
-		p::SmallProposalDistribution, t)
-		D = DisturbanceDistribution((o) -> Deterministic(),
-									(s,a) -> Deterministic(),
-									(s) -> Deterministic()) 
-		return D
-	end
-	
-	function StanfordAA228V.initial_state_distribution(p::SmallProposalDistribution)
-		return Normal(p.μ, p.σ)
-	end
-
-	StanfordAA228V.depth(p::SmallProposalDistribution) = get_depth(sys_small)
-	
-	function Distributions.fit(::Type{SmallProposalDistribution}, samples::Vector; ws::Vector)
-	    xs = [τ[1].s for τ in samples] 
-	    p = fit(Normal, xs, ws)
-		println("μ = $(p.μ), σ = $(p.σ)")
-	    return SmallProposalDistribution(p.μ, p.σ)
-	end
-
-	m, m_elite, m_IS = 61, 5, 17  ## mean err = 0.005018
-	@small function estimate_probability(sys::SmallSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		ps = Ps(sys.env)
-		p = NominalTrajectoryDistribution(sys, d)
-		q₀ = SmallProposalDistribution(ps.μ, ps.σ)
-		f = (τ, ψ) -> robustness(τ[d].s, ψ.formula, w=1.0)
-		k_max = div(n-m_IS, m)
-		return estimate(CrossEntropyEstimation(p, q₀, f, k_max, m, m_elite), sys, ψ)
-	end
-end
-
-# ╔═╡ 466c6a8b-a3cf-42fe-998f-660d514798d6
-## Nov05: code explanation. Distributions.jl
-begin
-	println(fit(Normal, [1.0, 2.0, 3.0]))
-	local samples = [randn(3) for _ in 1:100]
-	## fits a multivariate Normal
-	println(fit(MvNormal, hcat(samples...)))  ## 3×100 matrix
-end
-
 # ╔═╡ 307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
 Markdown.MD(
 	md"""
@@ -1054,128 +1176,6 @@ _We will report the mean and standard deviation of your estimates._
 
 **Your mean estimate should be better than random.**
 """)
-
-# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
-## Sequencial Monte Carlo estimation (particle filtering)
-begin
-	# using StatsBase
-	
-	## Metropolis-Hastings algorithm (MCMC)
-	struct MCMCSampling
-	    p̄       # target density
-	    g       # kernel: τ′ = rollout(sys, g(τ))
-	    τ       # initial trajectory
-	    k_max   # max iterations
-	    m_burnin    # number of samples to discard from burn-in
-	    m_skip      # number of samples to skip for thinning
-	end
-	
-	function sample_failures(alg::MCMCSampling, sys, ψ)
-	    p̄, g, τ = alg.p̄, alg.g, alg.τ
-	    k_max, m_burnin, m_skip = alg.k_max, alg.m_burnin, alg.m_skip
-	    τs = []
-	    for k in 1:k_max
-	        τ′ = rollout(sys, g(τ)) 
-	        if rand() < (p̄(τ′) * pdf(g(τ′), τ)) / (p̄(τ) * pdf(g(τ), τ′))
-	            τ = τ′
-	        end
-	        push!(τs, τ)
-	    end
-	    return τs[m_burnin:m_skip:end]
-	end
-
-	## Pendulum trajectory distribution
-	struct PendulumTrajectoryDistribution <: TrajectoryDistribution
-		μ₁  ## mean of initial state distribution
-		Σ₁  ## covariance of initial state distribution
-		μs  ## vector of sensor disturbance means, length d
-		Σs  ## vector of sensor disturbance covariance, length d
-	end
-	
-	function StanfordAA228V.initial_state_distribution(
-		p::PendulumTrajectoryDistribution)
-	    return MvNormal(p.μ₁, p.Σ₁)
-	end
-	
-	function StanfordAA228V.disturbance_distribution(
-		p::PendulumTrajectoryDistribution, t)
-	    D = DisturbanceDistribution((o)   -> Deterministic(),
-	                                (s,a) -> Deterministic(),
-	                                (s)   -> MvNormal(p.μs[t], p.Σs[t]))
-	    return D
-	end
-	
-	StanfordAA228V.depth(p::PendulumTrajectoryDistribution) = length(p.μs)
-
-	function inverted_pendulum_kernel(τ; Σ=0.05^2 * I) 
-		## sensor disturbance means and variances
-		μs, Σs = [step.x.xo for step in τ], [Σ for _ in τ]
-		return PendulumTrajectoryDistribution(τ[1].s, Σ, μs, Σs)
-	end
-
-	## system specific perturb function
-	function perturb(sys::MediumSystem, ψ, samples, ḡ)
-		new_samples = []
-	    for sample in samples
-			k_max, m_burnin, m_skip = 5, 1, 1  ## ⚠️
-			## p̄， g， τ， k_max， m_burnin， m_skip
-	        alg = MCMCSampling(ḡ, inverted_pendulum_kernel, sample,
-	                           k_max, m_burnin, m_skip)
-	        mcmc_samples = sample_failures(alg, sys, ψ)
-	        push!(new_samples, mcmc_samples[end])
-	    end
-	    return new_samples
-	end
-
-	function p̄failure_smooth(ψ, p, τ; ϵ=0.15)
-		## Δ is the scaler, p the prior over trajectory
-	    Δ = max(robustness([step.s for step in τ], ψ.formula), 0.0)
-	    return pdf(Normal(0, ϵ), Δ) * pdf(p, τ)
-	end
-	
-	struct SequentialMonteCarloEstimation
-	    p           # nominal trajectory distribution
-	    ḡs          # intermediate distributions
-	    perturb     # τs′ = perturb(τs, ḡ)
-	    m           # number of samples
-	end
-
-	function estimate(alg::SequentialMonteCarloEstimation, sys, ψ)
-	    p, ḡs, perturb, m = alg.p, alg.ḡs, alg.perturb, alg.m
-	    τs = [rollout(sys, p) for i in 1:m]
-	    ws = [ḡs[1](τ) / p(τ) for τ in τs]
-		# p̄failure(τ) = isfailure(ψ, τ) * pdf(p, τ)  ## hard failure
-	    # for (ḡ, ḡ′) in zip(ḡs, [ḡs[2:end]...; p̄failure])
-		for (ḡ, ḡ′) in zip(ḡs[1:end-1], ḡs[2:end]) ## No hard failure
-	        τs′ = perturb(sys, ψ, τs, ḡ)
-	        ws .*= [ḡ′(τ) / (ḡ(τ) + 1e-30) for τ in τs′]
-			println(ws[1:5])
-		    if sum(ws) > 0.0
-				## importance resample
-		        τs = τs′[rand(Categorical(ws ./ sum(ws)), m)] 
-				# τs = sample(τs′, Weights(ws), m; replace=true)
-		    else
-		        @warn "All weights are zero, skipping resampling"
-		    end
-			ws .= mean(ws)
-	    end
-		println("👉 ", mean(ws))
-		println(" ")
-	    return mean(ws) 
-	end
- 
-	@medium function estimate_probability(sys::MediumSystem, ψ; n=max_steps(sys))
-		# TODO: WRITE YOUR CODE HERE
-		d = get_depth(sys)
-		p = NominalTrajectoryDistribution(sys, d)
-		## Large ε (close to nominal) → small ε (close to hard failure)  
-		ϵs = [1.0, 0.5, 0.25, 0.19] ## ⚠️
-		m = 15 ## number of samples ⚠️
-		ḡs = [τ -> p̄failure_smooth(ψ, p, τ; ϵ=ϵ) for ϵ in ϵs]
-		# return 0.00815588  ## true failure probability
-		return estimate(SequentialMonteCarloEstimation(p, ḡs, perturb, m), sys, ψ)
-	end
-end
 
 # ╔═╡ 38f26afd-ffa5-48d6-90cc-e3ec189c2bf1
 Markdown.MD(
