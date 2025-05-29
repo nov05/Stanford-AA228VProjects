@@ -442,7 +442,7 @@ end
 @bind small_test_slider Slider(1:1:get_depth(sys_small); show_value=true)
 
 # ╔═╡ 9489629b-7181-4f92-91a5-a654b7cbaa54
-## Nov05: code explanation, sample 100 trajectories
+## Nov05: code explanation, sample 500 trajectories
 begin
 	import GLMakie
 	local d, num_samples = get_depth(sys_small), 500
