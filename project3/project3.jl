@@ -64,9 +64,9 @@ md"**Summary of the notebook:**
 
 | System                             | Algorithm                                 |
 |:----------------------------------|:------------------------------------------|
-| Small system (Mass-spring-damper) | **Linear programming** (choosing support directions using axis-aligned, random, uniform, PCA-based methods) |
-| Medium system (Inverted Pendulum)  | **Nonlinear reachability using Taylor approximation** (Taylor inclusion, Conservative linearization, Concrete Taylor inclusion, Concrete conservative linearization) |
-| Large system (Continuum World) | - |
+| Small system (Mass-spring-damper) | **Linear programming** (choosing support directions using axis-aligned, random, uniform, 👉 **PCA-based** methods) |
+| Medium system (Inverted Pendulum)  | **Non-linear reachability** (Taylor expansion-based methods such as Taylor inclusion, Conservative linearization, Concrete Taylor inclusion, 👉 **Concrete conservative linearization**) |
+| Large system (Continuum World) | **ReLU network, non-linear, non-differentiable** (Non-Taylor expansion-based methods such as Natural inclusion, 👉 **\"NeuralVerification\"'s Ai2 method** 🟢) |
 
 "
 
@@ -1094,13 +1094,18 @@ Please fill in the following `estimate_reachable_sets` function.
 # ╔═╡ 18a70925-3c2a-4317-8bbc-c2a096ec56d0
 start_code()
 
-# ╔═╡ 3471a623-16af-481a-8f66-5bd1e7890188
-@large function estimate_reachable_sets(sys::LargeSystem, ψ)
-	# TODO: WRITE YOUR CODE HERE
-end
-
 # ╔═╡ 4c5210d6-598f-4167-a6ee-93bceda7223b
 end_code()
+
+# ╔═╡ 75e1e1ef-0432-4c97-ab2e-9e4429201260
+## Nov05: code explanation
+begin
+	println("Type of sys_large.env: ", typeof(sys_large.env))
+	println("disturbance_mag: ", sys_large.env.disturbance_mag)
+	local d = get_depth(sys_large)
+	local τ = rollout(sys_large, d=d)
+	println(τ[d])
+end
 
 # ╔═╡ ef6bf2ba-748e-4f43-ad53-05d1936c2ba9
 
@@ -1378,7 +1383,7 @@ end
 # ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
 ## Taylor inclusion
 begin
-	function r(sys::MediumSystem, x)
+	function r(sys, x)
 	    s, 𝐱 = extract(sys.env, x)
 	    τ = rollout(sys, s, 𝐱)
 	    return τ[end].s
@@ -1491,12 +1496,12 @@ begin
 	end
 	
 	function reachable(alg::ConcreteConservativeLinearization, sys)
-	    S, X = sets(sys, 2)
+	    𝒮, 𝒳 = sets(sys, 2)
 	    ℛs = []
-	    push!(ℛs, S)
+	    push!(ℛs, 𝒮)
 	    for d in 2:alg.h
-	        S = conservative_linearization(sys, S × X)
-	        push!(ℛs, S)
+	        𝒮 = conservative_linearization(sys, 𝒮 × 𝒳)
+	        push!(ℛs, 𝒮)
 	    end
 	    return UnionSetArray([ℛs...])
 	end
@@ -1531,6 +1536,79 @@ begin
 	end
 
 	md"> *Generic `sets` and `intervals` functions.*"
+end
+
+# ╔═╡ 3471a623-16af-481a-8f66-5bd1e7890188
+begin
+	## Natural includsion
+	struct NaturalInclusion <: ReachabilityAlgorithm
+	    h  # time horizon  
+	end
+
+	function reachable(alg::NaturalInclusion, sys)
+	    I′s = []
+	    for d in 1:alg.h
+	        I = intervals(sys, d)
+	        push!(I′s, r(sys, I))
+	    end
+	    return UnionSetArray([to_hyperrectangle(I′) for I′ in I′s])
+	end
+
+	## package "neural verification"
+	struct NeuralVerification <: ReachabilityAlgorithm
+	    h       ## time horizon
+	    solver  ## We recommend using the AI² solver (see [1])
+		net     ## Convert Flux model → NeuralVerification network
+	end
+
+	function reachable(alg::NeuralVerification, sys::LargeSystem)
+		solver, net = alg.solver, alg.net    
+		d = get_depth(sys)
+		𝒮, 𝒳 = sets(sys, 1)  ## Get initial state set 𝒮 and disturbance set 𝒳
+		ℛs = LazySet[𝒮]      ## Initialze reachable sets w/ initial state set 𝒮
+		@progress for t in 2:d
+			# TODO:
+			# 1. Forward pass 𝒮 through the net: forward_network(solver, net, 𝒮)
+			𝒮 = forward_network(solver, net, 𝒮)
+			# 2. Then what? ... \oplus<TAB> may be useful...
+			ℛ = 𝒮 ⊕ 𝒳
+			# 3. Tip: concretize afterwards
+			LazySets.concretize(ℛ)
+			# 4. Push to ℛs
+			push!(ℛs, ℛ)
+		end
+		return UnionSetArray([ℛs...])
+	end
+
+	function intervals(sys::LargeSystem, d)
+	    disturbance_mag = sys.env.disturbance_mag
+	    xmin, xmax = -1.0, 1.0
+	    ymin, ymax = -1.0, 1.0
+	    I = [interval(xmin, xmax), interval(ymin, ymax)]
+	    for i in 1:2d
+	        push!(I, interval(-disturbance_mag, disturbance_mag))
+	    end
+	    return I
+	end
+	
+	function sets(sys::LargeSystem, d)
+	    disturbance_mag = sys.env.disturbance_mag * 1.2  ## ⚠️ fuzzing
+	    xmin, xmax = -1.0, 1.0
+	    ymin, ymax = -1.0, 1.0
+	    𝒮 = Hyperrectangle(low=[xmin, ymin], high=[xmax, ymax])
+	    low = fill(-disturbance_mag, 2d)
+	    high = fill(disturbance_mag, 2d)
+	    𝒳 = Hyperrectangle(low=low, high=high)
+	    return 𝒮, 𝒳
+	end
+	
+	@large function estimate_reachable_sets(sys::LargeSystem, ψ)
+		# TODO: WRITE YOUR CODE HERE
+		d = get_depth(sys)
+		h, solver, net = d, Ai2(), network(sys.env.model)
+		# return reachable(NaturalInclusion(h), sys)
+		return reachable(NeuralVerification(h, solver, net), sys)
+	end
 end
 
 # ╔═╡ 6c8b3077-876e-42fd-aa47-f3fa7c37f4dd
@@ -5048,6 +5126,7 @@ version = "1.8.1+0"
 # ╟─45c79345-89da-498c-9a98-2ad55a0a6114
 # ╠═3471a623-16af-481a-8f66-5bd1e7890188
 # ╟─4c5210d6-598f-4167-a6ee-93bceda7223b
+# ╠═75e1e1ef-0432-4c97-ab2e-9e4429201260
 # ╟─ef6bf2ba-748e-4f43-ad53-05d1936c2ba9
 # ╟─0a496e93-5853-46bd-a3c5-6f466df90441
 # ╟─ba82b4e4-413c-4b78-a777-85d03e3554f4
