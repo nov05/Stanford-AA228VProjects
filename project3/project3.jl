@@ -64,8 +64,8 @@ md"**Summary of the notebook:**
 
 | System                             | Algorithm                                 |
 |:----------------------------------|:------------------------------------------|
-| Small system (Mass-spring-damper) | **Linear programming** (choosing support directions using axis-aligned, random, uniform, or PCA-based methods) |
-| Medium system (Inverted Pendulum)  | - |
+| Small system (Mass-spring-damper) | **Linear programming** (choosing support directions using axis-aligned, random, uniform, PCA-based methods) |
+| Medium system (Inverted Pendulum)  | **Nonlinear reachability using Taylor approximation** (Taylor inclusion, Conservative linearization, Concrete Taylor inclusion, Concrete conservative linearization) |
 | Large system (Continuum World) | - |
 
 "
@@ -439,7 +439,7 @@ begin
 end
 
 # ╔═╡ 8e454fc6-b516-4c7e-899a-b99b548e9b7e
-@bind small_test_slider Slider(1:1:get_depth(sys_small); show_value=true)
+@bind small_test_slider Slider(1:1:get_depth(sys_small); default=3, show_value=true)
 
 # ╔═╡ 9489629b-7181-4f92-91a5-a654b7cbaa54
 ## Nov05: code explanation, sample 500 trajectories
@@ -491,13 +491,35 @@ Please fill in the following `estimate_reachable_sets` function.
 # ╔═╡ 0606d827-9c70-4a79-afa7-14fb6b806546
 start_code()
 
-# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
-@medium function estimate_reachable_sets(sys::MediumSystem, ψ)
-	# TODO: WRITE YOUR CODE HERE
-end
-
 # ╔═╡ 759534ca-b40b-4824-b7ec-3a5c06cbd23e
 end_code()
+
+# ╔═╡ 33b246ae-41b5-4c0b-aa76-c2fc29d5dbd4
+md"""Nov05: code explanation"""
+
+# ╔═╡ 4030103e-d4cd-4efc-933e-946013188967
+@bind medium_test_slider Slider(1:1:get_depth(sys_medium); default=1, show_value=true)
+
+# ╔═╡ ed0cb235-a193-4d3d-968d-b9744b8680b5
+## Nov05: code explanation, sample 500 trajectories
+begin
+	local d, num_samples = get_depth(sys_small), 500
+	local τs = [rollout(sys_medium; d=d) for _ in 1:num_samples]
+	local θs = [ [τ[step].s[1] for τ in τs] for step in 1:d ]
+	local ωs = [ [τ[step].s[2] for τ in τs] for step in 1:d ]
+	local fig = GLMakie.Figure(size = (400, 400))
+	local ax = GLMakie.Axis(fig[1, 1], xlabel="θ", ylabel="ω", 
+					limits = ((-π/2, π/2), (-1.2, 1.2)))
+	ax.title[] = "Time step: $medium_test_slider"
+	local scatter_plot = GLMakie.scatter!(
+		ax, θs[medium_test_slider], ωs[medium_test_slider]; markersize=6, color=GLMakie.RGBAf(0.282, 0.471, 0.812, 0.6))
+	xlims, ylims = ax.limits[]
+	left, right = -π/4, π/4
+	GLMakie.vlines!(ax, [left, right]; color = :red, linestyle = :dash, linewidth = 1)
+	GLMakie.poly!(ax, [xlims[1], left, left, xlims[1]], [ylims[1], ylims[1], ylims[2], ylims[2]]; color = (:lightgray, 0.5))
+	GLMakie.poly!(ax, [right, xlims[2], xlims[2], right], [ylims[1], ylims[1], ylims[2], ylims[2]]; color = (:lightgray, 0.5))
+	fig
+end
 
 # ╔═╡ 97dbe1e4-8045-4213-866f-6921c733fbeb
 
@@ -805,7 +827,7 @@ begin
 	struct LinearProgramming <: ReachabilityAlgorithm
 	    h    # time horizon
 	    # 𝒟    # set of directions to evaluate support function
-		𝒟s  ## PCA
+		𝒟s   ## PCA
 	    tol  # tolerance for checking satisfaction
 	end
 	
@@ -863,10 +885,10 @@ begin
 	
 	@small function estimate_reachable_sets(sys::SmallSystem, ψ; n=max_vertices(sys))
 		# TODO: WRITE YOUR CODE HERE
-		h, tol = get_depth(sys), 0.001  ## ⚠️
-		# 𝒟 = axis_aligned_directions()   ## ⚠️
-		# 𝒟 = random_directions(n)      ## 4 vertices
-		# 𝒟 = uniform_directions(n*2)   ## 8 vertices
+		h, tol = get_depth(sys), 0.001      ## ⚠️
+		# 𝒟 = axis_aligned_directions()       ## 4 vertices
+		# 𝒟 = random_directions(n)            ## 4 vertices
+		# 𝒟 = uniform_directions(n*2)         ## 8 vertices
 		# return reachable(LinearProgramming(h, 𝒟, tol), sys)
 		𝒟s = pca_directions(sys, n, 100)    ## 4 vertices
 		return reachable(LinearProgramming(h, 𝒟s, tol), sys)
@@ -891,6 +913,7 @@ begin
 end
 
 # ╔═╡ d13458d0-5fb4-4fc0-8b87-5775e7603a6d
+## Nov05: code explanation, SVD
 begin
 	local X = randn(100, 3)
 	local X_norm = hcat([normalize(X[:, i]) for i in 1:size(X, 2)]...)
@@ -1350,6 +1373,142 @@ begin
 	end
 
 	md"> *Helper `extract` functions.*"
+end
+
+# ╔═╡ cb7b9b9f-59da-4851-ab13-c451c26117df
+## Taylor inclusion
+begin
+	function r(sys::MediumSystem, x)
+	    s, 𝐱 = extract(sys.env, x)
+	    τ = rollout(sys, s, 𝐱)
+	    return τ[end].s
+	end
+
+	to_hyperrectangle(I) = Hyperrectangle(low=[i.lo for i in I],
+	                                      high=[i.hi for i in I])
+
+	## for Taylor inclusion
+	function intervals(sys::MediumSystem, d)
+	    disturbance_mag = 0.01
+	    θmin, θmax = -π/16, π/16
+	    ωmin, ωmax = -1.0, 1.0
+	    I = [interval(θmin, θmax), interval(ωmin, ωmax)]
+	    for i in 1:2d
+	        push!(I, interval(-disturbance_mag, disturbance_mag))
+	    end
+	    return I
+	end
+
+	struct TaylorInclusion <: ReachabilityAlgorithm
+	    h      # time horizon
+	    order  # order of Taylor inclusion function (supports 1 or 2)
+	end
+	
+	function taylor_inclusion(sys, I, order)
+	    c = mid.(I)
+	    fc = r(sys, c)
+	    if order == 1
+	        I′ = [fc[i] + gradient(x -> r(sys, x)[i], I)' * (I - c)
+	              for i in eachindex(fc)]
+	    else
+	        I′ = [fc[i] + gradient(x -> r(sys, x)[i], c)' * (I - c) +
+	              (I - c)' * hessian(x -> r(sys, x)[i], I) * (I - c)
+	              for i in eachindex(fc)]
+	    end
+	    return I′
+	end
+	
+	function reachable(alg::TaylorInclusion, sys)
+	    I′s = []
+	    @progress for d in 1:alg.h
+	        I = intervals(sys, d)
+	        I′ = taylor_inclusion(sys, I, alg.order)
+	        push!(I′s, I′)
+	    end
+	    return UnionSetArray([to_hyperrectangle(I′) for I′ in I′s])
+	end
+
+	## for conservative linearization
+	function sets(sys::MediumSystem, d)
+	    disturbance_mag = 0.01
+	    θmin, θmax = -π/16, π/16
+	    ωmin, ωmax = -1.0, 1.0
+	    𝒮 = Hyperrectangle(low=[θmin, ωmin], high=[θmax, ωmax])
+	    low = fill(-disturbance_mag, 2d)
+	    high = fill(disturbance_mag, 2d)
+	    𝒳 = Hyperrectangle(low=low, high=high)
+	    return 𝒮, 𝒳
+	end
+
+	struct ConservativeLinearization <: ReachabilityAlgorithm
+	    h  # time horizon
+	end
+	
+	to_intervals(𝒫) = [interval(lo, hi) for (lo, hi) in zip(low(𝒫), high(𝒫))]
+	
+	function conservative_linearization(sys, 𝒫)
+	    I = to_intervals(interval_hull(𝒫))
+	    c = mid.(I)
+	    fc = r(sys, c)
+	    J = ForwardDiff.jacobian(x -> r(sys, x), c)
+	    α = to_hyperrectangle([(I - c)' * hessian(x -> r(sys, x)[i], I) * (I - c)
+	                           for i in eachindex(fc)])
+	    return fc + J * (𝒫 ⊕ -c) ⊕ α
+	end
+	
+	function reachable(alg::ConservativeLinearization, sys)
+	    ℛs = []
+	    @progress for d in 1:alg.h
+	        𝒮, 𝒳 = sets(sys, d)
+	        𝒮′ = conservative_linearization(sys, 𝒮 × 𝒳)
+	        push!(ℛs, 𝒮′)
+	    end
+	    return UnionSetArray([ℛs...])
+	end
+
+	## Concrete Taylor inclusion
+	struct ConcreteTaylorInclusion <: ReachabilityAlgorithm
+	    h       # time horizon
+	    order   # order of Taylor inclusion function (supports 1 or 2)
+	end
+	
+	function reachable(alg::ConcreteTaylorInclusion, sys)
+	    I = intervals(sys, 2)
+	    s, _ = extract(sys.env, I)
+	    I′s = [s]
+	    @progress for d in 2:alg.h
+	        I′ = taylor_inclusion(sys, I, alg.order)
+	        push!(I′s, I′)
+	        s, _ = extract(sys.env, I)
+	        I[1:length(s)] = s
+	    end
+	    return UnionSetArray([to_hyperrectangle(I′) for I′ in I′s])
+	end
+
+	## Concrete conservative linearization
+	struct ConcreteConservativeLinearization <: ReachabilityAlgorithm
+	    h  # time horizon
+	end
+	
+	function reachable(alg::ConcreteConservativeLinearization, sys)
+	    S, X = sets(sys, 2)
+	    ℛs = []
+	    push!(ℛs, S)
+	    for d in 2:alg.h
+	        S = conservative_linearization(sys, S × X)
+	        push!(ℛs, S)
+	    end
+	    return UnionSetArray([ℛs...])
+	end
+
+	@medium function estimate_reachable_sets(sys::MediumSystem, ψ)
+		# TODO: WRITE YOUR CODE HERE
+		h, tol, order = get_depth(sys), 0.0001, 2  ## ⚠️
+		# return reachable(TaylorInclusion(h, order), sys)
+		# return reachable(ConservativeLinearization(h), sys)
+		# return reachable(ConcreteTaylorInclusion(h, order), sys)
+		return reachable(ConcreteConservativeLinearization(h), sys)
+	end
 end
 
 # ╔═╡ 70e5bfca-7172-4f21-b3e6-e31ac16c4add
@@ -4849,6 +5008,9 @@ version = "1.8.1+0"
 # ╟─f180bd3a-12da-4942-b2af-2df2f5887201
 # ╠═cb7b9b9f-59da-4851-ab13-c451c26117df
 # ╟─759534ca-b40b-4824-b7ec-3a5c06cbd23e
+# ╟─33b246ae-41b5-4c0b-aa76-c2fc29d5dbd4
+# ╟─4030103e-d4cd-4efc-933e-946013188967
+# ╟─ed0cb235-a193-4d3d-968d-b9744b8680b5
 # ╟─97dbe1e4-8045-4213-866f-6921c733fbeb
 # ╟─b1cf81ad-e5cb-40d7-b365-abda3fc67a88
 # ╟─a228c1ac-62cb-4c18-89b9-bda4c3b1c5bb
