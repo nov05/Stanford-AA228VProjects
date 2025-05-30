@@ -66,7 +66,7 @@ md"**Summary of the notebook:**
 |:----------------------------------|:------------------------------------------|
 | Small system (Mass-spring-damper) | **Linear programming** (choosing support directions using axis-aligned, random, uniform, 👉 **PCA-based** methods) |
 | Medium system (Inverted Pendulum)  | **Non-linear reachability** (Taylor expansion-based methods such as Taylor inclusion, Conservative linearization, Concrete Taylor inclusion, 👉 **Concrete conservative linearization**) |
-| Large system (Continuum World) | **ReLU network, non-linear, non-differentiable** (Non-Taylor expansion-based methods such as Natural inclusion, 👉 **\"NeuralVerification\"'s Ai2 method** 🟢) |
+| Large system (Continuum World) | **ReLU network, non-linear, non-differentiable** (Non-Taylor expansion-based methods such as Natural inclusion, 👉 **\"NeuralVerification\"'s Ai2 method**) |
 
 "
 
@@ -1540,7 +1540,7 @@ end
 
 # ╔═╡ 3471a623-16af-481a-8f66-5bd1e7890188
 begin
-	## Natural includsion
+	## Natural inclusion
 	struct NaturalInclusion <: ReachabilityAlgorithm
 	    h  # time horizon  
 	end
