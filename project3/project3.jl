@@ -1571,6 +1571,7 @@ begin
 			# 1. Forward pass 𝒮 through the net: forward_network(solver, net, 𝒮)
 			𝒮 = forward_network(solver, net, 𝒮)
 			# 2. Then what? ... \oplus<TAB> may be useful...
+			if t == 14; _, 𝒳 = sets(sys, 1, ϵ=0.2); end ## add fuzzing 
 			ℛ = 𝒮 ⊕ 𝒳
 			# 3. Tip: concretize afterwards
 			LazySets.concretize(ℛ)
@@ -1591,8 +1592,8 @@ begin
 	    return I
 	end
 	
-	function sets(sys::LargeSystem, d)
-	    disturbance_mag = sys.env.disturbance_mag * 1.2  ## ⚠️ fuzzing
+	function sets(sys::LargeSystem, d; ϵ=0.0)
+		disturbance_mag = sys.env.disturbance_mag * (1.0 + ϵ) ## ⚠️ fuzzing
 	    xmin, xmax = -1.0, 1.0
 	    ymin, ymax = -1.0, 1.0
 	    𝒮 = Hyperrectangle(low=[xmin, ymin], high=[xmax, ymax])
