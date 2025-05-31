@@ -427,6 +427,151 @@ Markdown.MD(
 	depth_highlight(sys_small)
 )
 
+# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
+begin 
+	abstract type ReachabilityAlgorithm end
+
+	## Convert to simple halfspace representation. 
+	## ℘ is typed as \wp<TAB>.
+	Ab(℘) = tosimplehrep(constraints_list(℘))
+
+	function get_matrices(sys)
+	    return Ts(sys.env), Ta(sys.env), Πo(sys.agent), Os(sys.sensor)
+	end
+
+	function constrained_model(sys, d, 𝒮, 𝒳)
+	    model = Model(SCS.Optimizer)
+	    @variable(model, 𝐬[1:LazySets.dim(𝒮), 1:d])
+	    @variable(model, 𝐱o[1:LazySets.dim(𝒳.xo), 1:d])
+	    @variable(model, 𝐱s[1:LazySets.dim(𝒳.xs), 1:d])
+	    @variable(model, 𝐱a[1:LazySets.dim(𝒳.xa), 1:d])
+	
+	    As, bs = Ab(𝒮)
+	    (Axo, bxo), (Axs, bxs), (Axa, bxa) = Ab(𝒳.xo), Ab(𝒳.xs), Ab(𝒳.xa)
+	    @constraint(model, As * 𝐬[:, 1] .≤ bs)
+	    for i in 1:d
+	        @constraint(model, Axo * 𝐱o[:, i] .≤ bxo)
+	        @constraint(model, Axs * 𝐱s[:, i] .≤ bxs)
+	        @constraint(model, Axa * 𝐱a[:, i] .≤ bxa)
+	    end
+	
+	    Ts, Ta, Πo, Os = get_matrices(sys)
+	    for i in 1:d-1
+	        @constraint(model, (Ts + Ta * Πo * Os) * 𝐬[:, i] + Ta * Πo * 𝐱o[:, i]
+	                              + Ta * 𝐱a[:, i] + 𝐱s[:, i] .== 𝐬[:, i+1])
+	    end
+	    return model
+	end
+
+	## 𝐝 (\bfd<TAB>): a direction vector from 𝒟, d: depth
+	function ρ(model, 𝐝, d)
+	    𝐬 = model.obj_dict[:𝐬]
+		println("👉 𝐝 = ", 𝐝, "\n   𝐬[:, d] = ", 𝐬[:, d])
+	    @objective(model, Max, 𝐝' * 𝐬[:, d])
+	    optimize!(model)
+	    return objective_value(model)
+	end
+
+	struct LinearProgramming <: ReachabilityAlgorithm
+	    h    # time horizon
+	    # 𝒟    # set of directions to evaluate support function
+		𝒟s   ## PCA
+	    tol  # tolerance for checking satisfaction
+	end
+	
+	function reachable(alg::LinearProgramming, sys)
+	    # h, 𝒟 = alg.h, alg.𝒟
+		h, 𝒟s = alg.h, alg.𝒟s  ## PCA
+		## .julia\packages\StanfordAA228V\h5BcH\src\mass_spring_damper.jl
+	    𝒮, 𝒳 = StanfordAA228V.𝒮₁(sys.env), disturbance_set(sys)
+	    ℛ = 𝒮
+	    @progress for d in 2:h
+	        model = constrained_model(sys, d, 𝒮, 𝒳)
+			𝒟 = 𝒟s[d]  ## PCA
+	        ρs = [ρ(model, 𝐝, d) for 𝐝 in 𝒟]
+	        ℛ = ℛ ∪ HPolytope([HalfSpace(𝐝, ρ) for (𝐝, ρ) in zip(𝒟, ρs)])
+	    end
+	    return ℛ
+	end
+
+	import MultivariateStats
+	
+	## Get set of support vector directions 𝒟
+	function axis_aligned_directions()
+	    return [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]]
+	end
+		
+	function random_directions(n::Int)
+	    return [normalize(randn(2)) for _ in 1:n]
+	end
+	
+	function uniform_directions(n::Int)
+	    return [[cos(θ), sin(θ)] for θ in range(0, 2π, length=n+1)[1:end-1]]
+	end
+	
+	function pca_directions(sys::SmallSystem, num_components::Int, num_samples::Int)
+		d = get_depth(sys)
+		τs = [rollout(sys; d=d) for _ in 1:num_samples]
+	    𝒟s = Any[]
+	    for step in 1:d
+	        ## Collect all samples at current step: each sample is [p, v]
+	        X = hcat([τ[step].s[1:2] for τ in τs]...)' ## shape: num_samples × 2
+			X_norm = normalize(X)
+			_, _, Vt = MultivariateStats.svd(X_norm)
+			vs = Vt[1:2, 1:2]'
+	        𝒟 = Any[]
+			for i in 1:size(vs, 1)
+			    v = vs[i, :]
+			    push!(𝒟, v)
+			    push!(𝒟, [-v[1], -v[2]])
+			end
+			push!(𝒟s, 𝒟)
+	    end
+		println("Shape of 𝒟s: [$(size(𝒟s, 1)), $(size(𝒟s[1], 1))]")
+	    return 𝒟s
+	end
+	
+	@small function estimate_reachable_sets(sys::SmallSystem, ψ; n=max_vertices(sys))
+		# TODO: WRITE YOUR CODE HERE
+		h, tol = get_depth(sys), 0.001      ## ⚠️
+		# 𝒟 = axis_aligned_directions()       ## 4 vertices
+		# 𝒟 = random_directions(n)            ## 4 vertices
+		# 𝒟 = uniform_directions(n*2)         ## 8 vertices
+		# return reachable(LinearProgramming(h, 𝒟, tol), sys)
+		𝒟s = pca_directions(sys, n, 100)    ## 4 vertices
+		return reachable(LinearProgramming(h, 𝒟s, tol), sys)
+	end
+end
+
+# ╔═╡ 08a1245d-20d7-486b-b211-4e7af8d91154
+## Nov05: code explanation, PCA
+## https://juliastats.org/MultivariateStats.jl/dev/pca/
+begin
+	local X = randn(100, 3)
+	println("X[1, :] = $(X[1, :])")
+	println("Value range of X: [$(minimum(X)), $(maximum(X))]")
+	local M = MultivariateStats.fit(MultivariateStats.PCA, X)
+	println("Type of M:", typeof(M))
+	local B = MultivariateStats.projection(M)
+	println("Size of B (projection): ", size(B), " ", size(M.proj))
+	local eigenvectors, eigenvalues = LinearAlgebra.eigvecs(M), LinearAlgebra.eigvals(M)
+	println("Size of eigenvalues: ", size(eigenvalues), " size of eigenvectors", size(eigenvectors))
+	println("Eigenvalues: ", eigenvalues)
+	println("Prinvars: ", M.prinvars) 
+end
+
+# ╔═╡ d13458d0-5fb4-4fc0-8b87-5775e7603a6d
+## Nov05: code explanation, SVD
+begin
+	local X = randn(100, 3)
+	local X_norm = hcat([normalize(X[:, i]) for i in 1:size(X, 2)]...)
+	local U, S, Vt = MultivariateStats.svd(X_norm)
+	# Vt = transpose of the right singular vectors
+	local directions = Vt[1:2, :]'  # Shape: (3, 2)
+	println("Principal directions (each row is a direction vector):")
+	println(directions)
+end
+
 # ╔═╡ 868079ec-4b82-49a4-9db0-3ece0cc8c4f4
 ## Nov05: code explanation
 begin
@@ -778,151 +923,6 @@ The return type of `estimate_reachable_sets` should either be:
 html_expand("Stuck on the linear system (small)? Expand for hints on what to try.", hint(Markdown.parse("""Check out the _set propagation_ techniques in section 8.2 of the textbook.
 
 Being a linear system, we can solve the reachability problem _**exactly**_. But we restrict the maximum number of vertices per time step to be \$n = $(format(max_vertices(sys_small); latex=true))\$ to make it more interesting.""")))
-
-# ╔═╡ fc2d34da-258c-4460-a0a4-c70b072f91ca
-begin 
-	abstract type ReachabilityAlgorithm end
-
-	## Convert to simple halfspace representation. 
-	## ℘ is typed as \wp<TAB>.
-	Ab(℘) = tosimplehrep(constraints_list(℘))
-
-	function get_matrices(sys)
-	    return Ts(sys.env), Ta(sys.env), Πo(sys.agent), Os(sys.sensor)
-	end
-
-	function constrained_model(sys, d, 𝒮, 𝒳)
-	    model = Model(SCS.Optimizer)
-	    @variable(model, 𝐬[1:LazySets.dim(𝒮), 1:d])
-	    @variable(model, 𝐱o[1:LazySets.dim(𝒳.xo), 1:d])
-	    @variable(model, 𝐱s[1:LazySets.dim(𝒳.xs), 1:d])
-	    @variable(model, 𝐱a[1:LazySets.dim(𝒳.xa), 1:d])
-	
-	    As, bs = Ab(𝒮)
-	    (Axo, bxo), (Axs, bxs), (Axa, bxa) = Ab(𝒳.xo), Ab(𝒳.xs), Ab(𝒳.xa)
-	    @constraint(model, As * 𝐬[:, 1] .≤ bs)
-	    for i in 1:d
-	        @constraint(model, Axo * 𝐱o[:, i] .≤ bxo)
-	        @constraint(model, Axs * 𝐱s[:, i] .≤ bxs)
-	        @constraint(model, Axa * 𝐱a[:, i] .≤ bxa)
-	    end
-	
-	    Ts, Ta, Πo, Os = get_matrices(sys)
-	    for i in 1:d-1
-	        @constraint(model, (Ts + Ta * Πo * Os) * 𝐬[:, i] + Ta * Πo * 𝐱o[:, i]
-	                              + Ta * 𝐱a[:, i] + 𝐱s[:, i] .== 𝐬[:, i+1])
-	    end
-	    return model
-	end
-
-	## 𝐝 (\bfd<TAB>): a direction vector from 𝒟, d: depth
-	function ρ(model, 𝐝, d)
-	    𝐬 = model.obj_dict[:𝐬]
-		println("👉 𝐝 = ", 𝐝, "\n   𝐬[:, d] = ", 𝐬[:, d])
-	    @objective(model, Max, 𝐝' * 𝐬[:, d])
-	    optimize!(model)
-	    return objective_value(model)
-	end
-
-	struct LinearProgramming <: ReachabilityAlgorithm
-	    h    # time horizon
-	    # 𝒟    # set of directions to evaluate support function
-		𝒟s   ## PCA
-	    tol  # tolerance for checking satisfaction
-	end
-	
-	function reachable(alg::LinearProgramming, sys)
-	    # h, 𝒟 = alg.h, alg.𝒟
-		h, 𝒟s = alg.h, alg.𝒟s  ## PCA
-		## .julia\packages\StanfordAA228V\h5BcH\src\mass_spring_damper.jl
-	    𝒮, 𝒳 = StanfordAA228V.𝒮₁(sys.env), disturbance_set(sys)
-	    ℛ = 𝒮
-	    @progress for d in 2:h
-	        model = constrained_model(sys, d, 𝒮, 𝒳)
-			𝒟 = 𝒟s[d]  ## PCA
-	        ρs = [ρ(model, 𝐝, d) for 𝐝 in 𝒟]
-	        ℛ = ℛ ∪ HPolytope([HalfSpace(𝐝, ρ) for (𝐝, ρ) in zip(𝒟, ρs)])
-	    end
-	    return ℛ
-	end
-
-	import MultivariateStats
-	
-	## Get set of support vector directions 𝒟
-	function axis_aligned_directions()
-	    return [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]]
-	end
-		
-	function random_directions(n::Int)
-	    return [normalize(randn(2)) for _ in 1:n]
-	end
-	
-	function uniform_directions(n::Int)
-	    return [[cos(θ), sin(θ)] for θ in range(0, 2π, length=n+1)[1:end-1]]
-	end
-	
-	function pca_directions(sys::SmallSystem, num_components::Int, num_samples::Int)
-		d = get_depth(sys)
-		τs = [rollout(sys; d=d) for _ in 1:num_samples]
-	    𝒟s = Any[]
-	    for step in 1:d
-	        ## Collect all samples at current step: each sample is [p, v]
-	        X = hcat([τ[step].s[1:2] for τ in τs]...)' ## shape: num_samples × 2
-			X_norm = normalize(X)
-			_, _, Vt = MultivariateStats.svd(X_norm)
-			vs = Vt[1:2, 1:2]'
-	        𝒟 = Any[]
-			for i in 1:size(vs, 1)
-			    v = vs[i, :]
-			    push!(𝒟, v)
-			    push!(𝒟, [-v[1], -v[2]])
-			end
-			push!(𝒟s, 𝒟)
-	    end
-		println("Shape of 𝒟s: [$(size(𝒟s, 1)), $(size(𝒟s[1], 1))]")
-	    return 𝒟s
-	end
-	
-	@small function estimate_reachable_sets(sys::SmallSystem, ψ; n=max_vertices(sys))
-		# TODO: WRITE YOUR CODE HERE
-		h, tol = get_depth(sys), 0.001      ## ⚠️
-		# 𝒟 = axis_aligned_directions()       ## 4 vertices
-		# 𝒟 = random_directions(n)            ## 4 vertices
-		# 𝒟 = uniform_directions(n*2)         ## 8 vertices
-		# return reachable(LinearProgramming(h, 𝒟, tol), sys)
-		𝒟s = pca_directions(sys, n, 100)    ## 4 vertices
-		return reachable(LinearProgramming(h, 𝒟s, tol), sys)
-	end
-end
-
-# ╔═╡ 08a1245d-20d7-486b-b211-4e7af8d91154
-## Nov05: code explanation, PCA
-## https://juliastats.org/MultivariateStats.jl/dev/pca/
-begin
-	local X = randn(100, 3)
-	println("X[1, :] = $(X[1, :])")
-	println("Value range of X: [$(minimum(X)), $(maximum(X))]")
-	local M = MultivariateStats.fit(MultivariateStats.PCA, X)
-	println("Type of M:", typeof(M))
-	local B = MultivariateStats.projection(M)
-	println("Size of B (projection): ", size(B), " ", size(M.proj))
-	local eigenvectors, eigenvalues = LinearAlgebra.eigvecs(M), LinearAlgebra.eigvals(M)
-	println("Size of eigenvalues: ", size(eigenvalues), " size of eigenvectors", size(eigenvectors))
-	println("Eigenvalues: ", eigenvalues)
-	println("Prinvars: ", M.prinvars) 
-end
-
-# ╔═╡ d13458d0-5fb4-4fc0-8b87-5775e7603a6d
-## Nov05: code explanation, SVD
-begin
-	local X = randn(100, 3)
-	local X_norm = hcat([normalize(X[:, i]) for i in 1:size(X, 2)]...)
-	local U, S, Vt = MultivariateStats.svd(X_norm)
-	# Vt = transpose of the right singular vectors
-	local directions = Vt[1:2, :]'  # Shape: (3, 2)
-	println("Principal directions (each row is a direction vector):")
-	println(directions)
-end
 
 # ╔═╡ 307afd9c-6dac-4a6d-89d7-4d8cabfe3fe5
 Markdown.MD(
@@ -2192,23 +2192,23 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
 BSON = "~0.3.9"
-Distributions = "~0.25.117"
+Distributions = "~0.25.120"
 Flux = "~0.16.3"
 ForwardDiff = "~0.10.38"
 GLMakie = "~0.11.8"
-GridInterpolations = "~1.2.1"
+GridInterpolations = "~1.3.0"
 IntervalArithmetic = "~0.21.2"
-JuMP = "~1.24.0"
+JuMP = "~1.25.0"
 LazySets = "~2.14.2"
-MarkdownLiteral = "~0.1.1"
+MarkdownLiteral = "~0.1.2"
 MultivariateStats = "~0.10.3"
 NeuralVerification = "~0.1.0"
 Parameters = "~0.12.3"
-Plots = "~1.40.9"
-PlutoUI = "~0.7.61"
+Plots = "~1.40.13"
+PlutoUI = "~0.7.62"
 ProgressLogging = "~0.1.4"
 SCS = "~2.0.2"
-StanfordAA228V = "~0.1.25"
+StanfordAA228V = "~0.1.27"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -2217,7 +2217,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.11.5"
 manifest_format = "2.0"
-project_hash = "49a75062d5deae6bf68ef293638ce1987a19a8b9"
+project_hash = "34c6995824ea72ed65054f47bd44f92f51c90ce9"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "e2478490447631aedba0823d4d7a80b2cc8cdb32"
@@ -3133,9 +3133,9 @@ version = "1.3.15+0"
 
 [[deps.GridInterpolations]]
 deps = ["LinearAlgebra", "Printf", "StaticArrays"]
-git-tree-sha1 = "e64e58d732c7c1f32575e2b057c0fb0f7f52e244"
+git-tree-sha1 = "6916860ab8162db1fd34c8e8027243dc3b3f12ea"
 uuid = "bb4c363b-b914-514b-8517-4eb369bc008a"
-version = "1.2.1"
+version = "1.3.0"
 
 [[deps.GridLayoutBase]]
 deps = ["GeometryBasics", "InteractiveUtils", "Observables"]
@@ -3359,9 +3359,9 @@ version = "3.1.1+0"
 
 [[deps.JuMP]]
 deps = ["LinearAlgebra", "MacroTools", "MathOptInterface", "MutableArithmetics", "OrderedCollections", "PrecompileTools", "Printf", "SparseArrays"]
-git-tree-sha1 = "cf832644f225dbe721bb9b97bf432007765fc695"
+git-tree-sha1 = "c9ace86360c1dc0635de5f9e2ce5143b86c53311"
 uuid = "4076af6c-e467-56ae-b986-b466b2749572"
-version = "1.24.0"
+version = "1.25.0"
 
     [deps.JuMP.extensions]
     JuMPDimensionalDataExt = "DimensionalData"
@@ -3865,9 +3865,9 @@ version = "1.3.5+1"
 
 [[deps.OneHotArrays]]
 deps = ["Adapt", "ChainRulesCore", "Compat", "GPUArraysCore", "LinearAlgebra", "NNlib"]
-git-tree-sha1 = "3685584454b04cd52169c787ba4d196da8a04d10"
+git-tree-sha1 = "bfe8e84c71972f77e775f75e6d8048ad3fdbe8bc"
 uuid = "0b1bfda6-eb8a-41d2-88d8-f5af5cad476f"
-version = "0.2.9"
+version = "0.2.10"
 
 [[deps.OpenBLAS32_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
@@ -3983,9 +3983,9 @@ version = "0.5.12"
 
 [[deps.Pango_jll]]
 deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jll", "Glib_jll", "HarfBuzz_jll", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "3b31172c032a1def20c98dae3f2cdc9d10e3b561"
+git-tree-sha1 = "275a9a6d85dc86c24d03d1837a0010226a96f540"
 uuid = "36c8627f-9965-5494-a995-c6b170f724f3"
-version = "1.56.1+0"
+version = "1.56.3+0"
 
 [[deps.Parameters]]
 deps = ["OrderedCollections", "UnPack"]
@@ -4475,9 +4475,9 @@ weakdeps = ["SparseArrays"]
 
 [[deps.StatsAPI]]
 deps = ["LinearAlgebra"]
-git-tree-sha1 = "1ff449ad350c9c4cbc756624d6f8a8c3ef56d3ed"
+git-tree-sha1 = "9d72a13a3f4dd3795a195ac5a44d7d6ff5f552ff"
 uuid = "82ae8749-77ed-4fe6-ae5f-f523153014b0"
-version = "1.7.0"
+version = "1.7.1"
 
 [[deps.StatsBase]]
 deps = ["AliasTables", "DataAPI", "DataStructures", "LinearAlgebra", "LogExpFunctions", "Missings", "Printf", "Random", "SortingAlgorithms", "SparseArrays", "Statistics", "StatsAPI"]
