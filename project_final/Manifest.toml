@@ -2,7 +2,7 @@
 
 julia_version = "1.11.5"
 manifest_format = "2.0"
-project_hash = "54b022f245e8bd814bfafd8ee6417ddd2cb0175b"
+project_hash = "d82dd477558793a57f99425ec669b286257bd100"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "e2478490447631aedba0823d4d7a80b2cc8cdb32"
@@ -251,6 +251,12 @@ version = "1.11.0"
 git-tree-sha1 = "aebf55e6d7795e02ca500a689d326ac979aaf89e"
 uuid = "9718e550-a3fa-408a-8086-8db961cd8217"
 version = "0.1.1"
+
+[[deps.BeliefUpdaters]]
+deps = ["POMDPTools", "POMDPs", "Random", "Statistics", "StatsBase"]
+git-tree-sha1 = "8819a9a0e9e9002125ae55626e10f0c210959c30"
+uuid = "8bb6e9a1-7d73-552c-a44a-e5dc5634aac4"
+version = "0.2.3"
 
 [[deps.BenchmarkTools]]
 deps = ["Compat", "JSON", "Logging", "Printf", "Profile", "Statistics", "UUIDs"]
@@ -2217,10 +2223,10 @@ uuid = "182e52fb-cfd0-5e46-8c26-fd0667c990f4"
 version = "0.4.3"
 
 [[deps.POMDPSimulators]]
-deps = ["DataFrames", "Distributed", "NamedTupleTools", "POMDPLinter", "POMDPTools", "POMDPs", "ProgressMeter", "Random", "Reexport"]
-git-tree-sha1 = "3735b7a48bd892f153ab7327cb71e447e8f18e14"
+deps = ["BeliefUpdaters", "DataFrames", "Distributed", "NamedTupleTools", "POMDPLinter", "POMDPModelTools", "POMDPPolicies", "POMDPs", "ProgressMeter", "Random"]
+path = "D:\\Users\\guido\\.julia\\dev\\POMDPSimulators"
 uuid = "e0d0a172-29c6-5d4e-96d0-f262df5d01fd"
-version = "0.3.14"
+version = "0.3.13"
 
 [[deps.POMDPStressTesting]]
 deps = ["CUDA", "CommonRLInterface", "CrossEntropyMethod", "D3Trees", "DataStructures", "Distributed", "Distributions", "Flux", "IterTools", "JLD2", "LinearAlgebra", "MCTS", "Markdown", "POMDPModelTools", "POMDPPolicies", "POMDPSimulators", "POMDPs", "Parameters", "ProgressMeter", "Random", "Requires", "Statistics", "Zygote"]
